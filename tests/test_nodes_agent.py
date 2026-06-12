@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall
 
-from agent_app.graph import _invoke_tool_agent, agent_node
+from agent_app.nodes.agent import agent_node, invoke_tool_agent
 from tests.helpers import base_state
 
 
@@ -146,7 +146,7 @@ class AgentNodeTest(unittest.TestCase):
         fake_llm = FakeLLM()
 
         with patch("agent_app.nodes.agent.get_chat_llm", return_value=fake_llm):
-            _invoke_tool_agent([], {"candidate_tool_names": ["fetch_url"]})
+            invoke_tool_agent([], {"candidate_tool_names": ["fetch_url"]})
 
         self.assertEqual(fake_llm.bound_tool_names, ["fetch_url"])
 
