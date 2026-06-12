@@ -8,6 +8,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
 from agent_app.llm import get_chat_model, invoke_with_fallback
+from agent_app.memory import update_memory_from_turn, with_memory_context
 from agent_app.tool_selector import select_tool
 from agent_app.tools import tool_metadata_by_name, tools, tools_by_name
 from agent_app.tools.runtime import run_tool
@@ -20,6 +21,7 @@ class AgentState(TypedDict):
     tool_errors: Annotated[list, operator.add]
     retrieval_results: Annotated[list, operator.add]
     user_profile: dict
+    long_term_memory: dict
 
 
 llm = get_chat_model()
@@ -52,6 +54,7 @@ def _message_text(message: HumanMessage) -> str:
 def agent_node(state: AgentState):
     """调用模型，生成回复或工具调用。"""
     messages = state["messages"]
+    memory_state = state.get("long_term_memory", {})
 
     if isinstance(messages[-1], ToolMessage):
         response = invoke_with_fallback(
@@ -63,7 +66,7 @@ def agent_node(state: AgentState):
                         "如果工具结果明确失败，再说明失败原因并给出下一步建议。"
                     )
                 ),
-                *messages,
+                *with_memory_context(messages, memory_state),
             ]
         )
     else:
@@ -73,15 +76,26 @@ def agent_node(state: AgentState):
         if selection and selection.action == "tool":
             response = _tool_selection_to_message(selection.tool_name, selection.args)
         elif selection and selection.action == "chat":
-            response = invoke_with_fallback(messages)
+            response = invoke_with_fallback(with_memory_context(messages, memory_state))
         else:
-            response = llm_with_tools.invoke(messages)
+            response = llm_with_tools.invoke(with_memory_context(messages, memory_state))
 
     state_update = {"messages": [response]}
     if "selection" in locals() and selection:
         state_update["tool_selection"] = selection.to_dict()
 
     return state_update
+
+
+def memory_node(state: AgentState):
+    """在最终回复后更新长期记忆。"""
+    latest_human_message = _latest_human_message(state["messages"])
+    last_message = state["messages"][-1]
+    if not latest_human_message or not isinstance(last_message, AIMessage):
+        return {}
+
+    memory_state = update_memory_from_turn(state.get("long_term_memory", {}), latest_human_message, last_message)
+    return {"long_term_memory": memory_state}
 
 
 def _tool_selection_to_message(tool_name: str, tool_args: dict):
@@ -125,9 +139,11 @@ def build_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", agent_node)
     workflow.add_node("tools", tool_node)
+    workflow.add_node("memory", memory_node)
     workflow.set_entry_point("agent")
-    workflow.add_conditional_edges("agent", router, {"tools": "tools", "__end__": END})
+    workflow.add_conditional_edges("agent", router, {"tools": "tools", "__end__": "memory"})
     workflow.add_edge("tools", "agent")
+    workflow.add_edge("memory", END)
     return workflow.compile()
 
 

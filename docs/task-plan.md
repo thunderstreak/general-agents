@@ -14,7 +14,7 @@
 | State 状态管理 | 已完成 | P1 | `AgentState` 已包含 `messages`、`tool_selection`、`tool_calls`、`tool_errors`、`retrieval_results`、`user_profile` | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
 | RAG 知识检索 | 未实现 | P2 | 暂无文档加载、向量化、向量库、检索链路 | 增加文档导入、embedding、vector store、retriever、引用来源输出 |
-| Memory 记忆 | 已实现但功能不全 | P2 | `messages` 通过 LangGraph `add_messages` 保存当前进程内多轮上下文 | 增加长期记忆、用户偏好、历史摘要；接入数据库或文件存储 |
+| Memory 记忆 | 已完成 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 后续可增加记忆管理命令、隐私策略、语义检索和数据库存储 |
 | Orchestrator 编排层 | 已实现但功能不全 | P2 | `agent_app/graph.py` 使用 LangGraph 编排 agent/tool 循环 | 增加 RAG 节点、memory 写入节点、失败分支、人工确认节点 |
 | 数据存储 | 未实现 | P2 | 暂无数据库或文件存储 | 为 memory、RAG 文档、用户配置增加持久化存储 |
 | 输出层 | 已实现但功能不全 | P3 | CLI 直接打印 `Agent: ...` | 增加结构化输出、Markdown 渲染、统一错误响应、API/前端输出层 |
@@ -76,8 +76,11 @@
    - 在 LangGraph 中增加 RAG 节点。
 
 2. 长期 Memory
-   - 增加用户画像和历史摘要存储。
-   - 明确哪些信息允许写入长期记忆。
+   - [x] 增加用户画像和历史摘要存储。
+   - [x] 明确只自动写入用户明确要求记住的信息、名字和偏好。
+   - [x] 增加本地 JSON 持久化存储。
+   - [ ] 增加记忆查看、删除和清空命令。
+   - [ ] 增加语义检索和数据库存储。
 
 3. Orchestrator 编排层
    - 增加 RAG 节点、memory 写入节点、失败分支。

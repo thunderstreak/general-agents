@@ -2,11 +2,13 @@
 
 from agent_app.file_inputs import build_human_message, parse_user_input
 from agent_app.graph import app
+from agent_app.memory import load_memory, memory_to_state
 
 
 def run_cli():
     """启动命令行 Agent。"""
     print("🧠 LangGraph Agent 启动 (输入 'quit' 退出)\n")
+    memory = load_memory()
     state = {
         "messages": [],
         "tool_selection": {},
@@ -14,6 +16,7 @@ def run_cli():
         "tool_errors": [],
         "retrieval_results": [],
         "user_profile": {},
+        "long_term_memory": memory_to_state(memory),
     }  # 持久化状态
 
     while True:
