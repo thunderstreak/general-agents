@@ -79,7 +79,7 @@ class ToolSelection:
         return asdict(self)
 
 
-selector_llm = get_tool_selector_model()
+_selector_llm = None
 
 
 def should_enter_tool_mode(user_text: str) -> bool:
@@ -116,7 +116,7 @@ def select_tool(user_text: str) -> ToolSelection:
     prompt = load_prompt("tool_selector.md").replace("{tool_descriptions}", _format_tool_descriptions())
 
     try:
-        response = selector_llm.invoke(
+        response = _get_selector_llm().invoke(
             [
                 SystemMessage(content=prompt),
                 HumanMessage(content=user_text),
@@ -163,6 +163,14 @@ def _format_tool_descriptions() -> str:
             f"  requires_confirmation: {metadata.requires_confirmation}"
         )
     return "\n".join(lines)
+
+
+def _get_selector_llm():
+    """延迟获取工具选择模型，避免导入模块时初始化模型。"""
+    global _selector_llm
+    if _selector_llm is None:
+        _selector_llm = get_tool_selector_model()
+    return _selector_llm
 
 
 def _normalize_quick_chat_text(text: str) -> str:

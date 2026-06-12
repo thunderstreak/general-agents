@@ -12,6 +12,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agent_app.config import MEMORY_FILE_PATH, MEMORY_MAX_ITEMS
+from agent_app.utils.messages import message_text
 
 
 @dataclass
@@ -140,8 +141,8 @@ def with_memory_context(messages: list, memory_state: dict[str, Any] | None) -> 
 def update_memory_from_turn(memory_state: dict[str, Any] | None, human_message: HumanMessage, ai_message: AIMessage) -> dict[str, Any]:
     """根据一轮对话更新长期记忆。"""
     memory = state_to_memory(memory_state)
-    user_text = _message_text(human_message)
-    assistant_text = _message_text(ai_message)
+    user_text = message_text(human_message)
+    assistant_text = message_text(ai_message)
 
     new_items = extract_memory_items(user_text)
     for item in new_items:
@@ -204,17 +205,3 @@ def _compact(text: str, max_length: int = 160) -> str:
     if len(compacted) <= max_length:
         return compacted
     return compacted[:max_length] + "..."
-
-
-def _message_text(message) -> str:
-    """提取消息文本。"""
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                parts.append(str(part.get("text", "")))
-        return "\n".join(parts)
-    return str(content)

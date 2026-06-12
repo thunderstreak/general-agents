@@ -1,13 +1,11 @@
 """LangGraph 图编排。"""
 
-import operator
 import time
-from typing import Annotated, Literal, TypedDict
+from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
 
 from agent_app.config import ORCHESTRATOR_MAX_STEPS
 from agent_app.llm import get_chat_model, invoke_with_fallback
@@ -20,34 +18,15 @@ from agent_app.orchestrator import (
     success_node_run,
 )
 from agent_app.output import build_response
+from agent_app.state import AgentState
 from agent_app.tool_selector import ToolSelection, should_enter_tool_mode
 from agent_app.tools import candidate_tool_names_for_text, tool_metadata_by_name, tools, tools_by_name
 from agent_app.tools.runtime import run_tool
+from agent_app.utils.messages import message_text
 
 
-class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]  # LangGraph 会自动追加消息
-    tool_selection: dict
-    plan: dict
-    reflection: dict
-    tool_calls: Annotated[list, operator.add]
-    tool_errors: Annotated[list, operator.add]
-    retrieval_results: Annotated[list, operator.add]
-    user_profile: dict
-    long_term_memory: dict
-    step_count: int
-    max_steps: int
-    last_error: dict
-    pending_confirmation: dict
-    approved_tool_call_ids: list
-    final_response: dict
-    trace_id: str
-    node_runs: Annotated[list, operator.add]
-    memory_updated: bool
-
-
-llm = get_chat_model()
-llm_with_tools = llm.bind_tools(tools)
+_chat_llm = None
+_llm_with_tools = None
 
 
 def _emit_progress(message: str, event: str = "progress", **metadata) -> None:
@@ -68,23 +47,6 @@ def _latest_human_message(messages: list):
         if isinstance(message, HumanMessage):
             return message
     return None
-
-
-def _message_text(message) -> str:
-    """提取消息中的文本。"""
-    if message is None:
-        return ""
-    if isinstance(message.content, str):
-        return message.content
-
-    if isinstance(message.content, list):
-        text_parts = []
-        for part in message.content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                text_parts.append(part.get("text", ""))
-        return "\n".join(text_parts)
-
-    return str(message.content)
 
 
 def _next_step_state(state: AgentState, node_name: str):
@@ -112,7 +74,7 @@ def retrieval_node(state: AgentState):
     start_time = time.perf_counter()
     trace_id = state.get("trace_id") or new_trace_id()
     latest_human_message = _latest_human_message(state["messages"])
-    user_text = _message_text(latest_human_message)
+    user_text = message_text(latest_human_message)
 
     retrieval_results = []
     if should_retrieve(user_text):
@@ -143,7 +105,7 @@ def planning_node(state: AgentState):
         }
 
     latest_human_message = _latest_human_message(state["messages"])
-    user_text = _message_text(latest_human_message)
+    user_text = message_text(latest_human_message)
 
     selection = _planning_selection(user_text, bool(latest_human_message))
 
@@ -195,7 +157,7 @@ def agent_node(state: AgentState):
             elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
-                response = llm_with_tools.invoke(model_messages)
+                response = _get_llm_with_tools().invoke(model_messages)
 
         state_update = {**step_update, "messages": [response], "node_runs": [_node_run("agent", start_time)]}
         return state_update
@@ -456,8 +418,24 @@ def _invoke_tool_agent(model_messages: list, plan: dict):
     candidate_names = plan.get("candidate_tool_names") if isinstance(plan, dict) else []
     candidate_tools = [tools_by_name[name] for name in candidate_names if name in tools_by_name] if isinstance(candidate_names, list) else []
     if not candidate_tools:
-        return llm_with_tools.invoke(model_messages)
-    return llm.bind_tools(candidate_tools).invoke(model_messages)
+        return _get_llm_with_tools().invoke(model_messages)
+    return _get_chat_llm().bind_tools(candidate_tools).invoke(model_messages)
+
+
+def _get_chat_llm():
+    """延迟获取主聊天模型，避免导入 graph 时初始化模型。"""
+    global _chat_llm
+    if _chat_llm is None:
+        _chat_llm = get_chat_model()
+    return _chat_llm
+
+
+def _get_llm_with_tools():
+    """延迟获取绑定全量工具的模型。"""
+    global _llm_with_tools
+    if _llm_with_tools is None:
+        _llm_with_tools = _get_chat_llm().bind_tools(tools)
+    return _llm_with_tools
 
 
 def _current_plan_step(plan: dict) -> dict:

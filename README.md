@@ -348,6 +348,10 @@ python scripts/check_intent_examples.py
 
 ## 开发说明
 
+- `agent_app/graph.py` 负责 LangGraph 节点编排和节点实现；模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
+- `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 state reset 和旧会话默认值补齐。
+- `agent_app/utils/` 存放通用 helper；其中 `utils/messages.py` 提供 LangChain message 文本提取，避免各模块重复解析消息结构。
+- `agent_app/cli.py` 保留 CLI 主循环、输入读取和会话命令；`agent_app/cli_stream.py` 负责流式 chunk 解析、进度输出和 debug 尾部渲染。
 - 新增工具时，需要在 `agent_app/tools/` 下实现工具函数，并在同一模块声明 `TOOL_METADATA`；然后在 `agent_app/tools/__init__.py` 导入工具函数和 metadata 进行汇总注册。
 - 新增 prompt 时，放入 `agent_app/prompts/`，通过 `prompt_loader.load_prompt()` 读取。
 - 需要调整单轮最大编排次数时，修改 `.env` 中的 `ORCHESTRATOR_MAX_STEPS`。

@@ -5,22 +5,22 @@
 | 模块 | 状态 | 优先级 | 当前实现 | 后续任务 |
 |---|---|---|---|---|
 | 配置管理 | 已完成 | P0 | `agent_app/config.py` 从 `.env` / 环境变量读取模型名、`base_url`、API key，并提供 `.env.example` | 后续可继续区分 dev/test/prod 配置 |
-| 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、orchestrator、output、CLI stream、CLI session、session store、CLI input 等基础行为 | 增加模型 mock、工具 mock、意图/工具选择样例自动化、端到端测试 |
+| 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、orchestrator、output、CLI stream、CLI session、session store、CLI input、state、message utils 等基础行为 | 增加模型 mock、工具 mock、意图/工具选择样例自动化、端到端测试 |
 | 日志与可观测性 | 已实现但功能不全 | P0 | 编排层已记录 `trace_id`、节点运行耗时和成功/失败状态；CLI 流式输出可展示节点进度 | 增加 structured logging、token/cost 统计、工具输入输出持久化记录、loop/stop reason |
 | 安全与权限 | 未实现 | P0 | 工具可直接调用外部接口 | 增加工具白名单、敏感操作确认、API key 保护、输入过滤 |
 | 感知理解 | 已实现但分散 | P1 | CLI 支持文本输入和 `@文件路径`，文件解析模块支持文本、文档、表格、图片输入 | 增加统一 perception 节点，规范输入解析结果、附件元数据和多模态能力判断 |
 | Prompt 管理 | 已完成 | P1 | 意图分类 prompt 已拆分到 `agent_app/prompts/`，并提供分类样例文件 | 后续可继续增加版本管理和环境区分 |
 | 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
-| State 状态管理 | 已完成 | P1 | `AgentState` 已包含 `messages`、`tool_selection`、`plan`、`reflection`、`tool_calls`、`tool_errors`、`retrieval_results`、`user_profile` | 后续随 RAG 和长期记忆继续扩展字段 |
-| LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
+| State 状态管理 | 已完成 | P1 | `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐；state 已包含 `messages`、`tool_selection`、`plan`、`reflection`、`tool_calls` 等字段 | 后续随 RAG 和长期记忆继续扩展字段 |
+| LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；graph/tool selector 已改为延迟初始化模型；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
 | RAG 知识检索 | 未实现 | P2 | 已有 `EMBEDDING_MODEL_NAME`、`get_embedding_model()`、`retrieval_node`、`retrieval_results` 和输出层来源展示预留；尚未实现真实知识库导入、切分、向量化、Chroma 向量库和检索 | 第一版实现本地文件知识库、文本切分、embedding、Chroma vector store、retriever、引用来源输出和 CLI 知识库命令 |
 | Memory 记忆 | 已完成但检索弱 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 增加记忆管理命令、隐私策略、长期记忆语义检索和更细粒度存储 |
 | 反思评估 | 已完成基础结构 | P2 | 已新增轻量 `reflection_node`，工具执行后核对成功/失败，成功回到 `agent_node` 总结，失败进入错误响应 | 增强结构化反思：判断结果是否充分、是否需要重试/换工具/补充提问 |
 | 循环迭代控制 | 弱实现 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；工具后可回到 agent | 增加 loop reason、stop reason、retry policy、反思后回到 planning/tool/response 的路由 |
 | Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 使用 LangGraph 编排 retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 节点，支持循环保护、失败分支、人工确认预留、统一输出和节点 trace | 接入真实 RAG、增强 reflection、plan 推进和更细路由 |
 | 数据存储 | 已实现基础会话保存 | P2 | 已有 `.agent_memory.json` 长期记忆和 `.agent_sessions/` 文件夹式会话历史；RAG 文档/chunk 元数据、Chroma 向量索引、工具记录和 trace 尚未持久化 | 补齐 RAG 元数据、工具运行记录、节点 trace、用户配置和数据清理能力 |
-| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出 | 后续增加 API/前端输出适配和更丰富的 Markdown 渲染 |
+| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已拆分到 `agent_app/cli_stream.py` | 后续增加 API/前端输出适配和更丰富的 Markdown 渲染 |
 | API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行；输出层已提供可复用的结构化 `final_response` | 增加 FastAPI HTTP API、内存 session store、会话创建/恢复、确认流程 API 化、健康检查和基础测试 |
 
 ## Agent 工作流程链路现状
@@ -57,6 +57,7 @@
    - [x] 增加 `unittest` 测试目录和基础测试。
    - [ ] 为天气工具、定位工具、网页搜索工具补 mock 测试。
    - [x] 为 URL Fetch 工具补 mock 测试。
+   - [x] 为 message utils 和 state 初始化补单元测试。
    - [ ] 为工具选择、规划、反思和端到端链路增加模型 mock 测试。
 
 3. [ ] 日志与可观测性
@@ -101,6 +102,7 @@
    - [x] 扩展 `AgentState`，保存工具选择、工具调用、工具错误、检索结果、用户画像等结构化状态。
    - [x] 扩展 `AgentState`，保存 planning 结构。
    - [x] 扩展 `AgentState`，保存 reflection 结构。
+   - [x] 将 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐集中到 `agent_app/state.py`。
    - [ ] 扩展 `AgentState`，保存 loop reason 和 stop reason。
 
 6. [x] LLM 大模型
@@ -108,7 +110,14 @@
    - [x] 增加模型 fallback。
    - [x] 增加 timeout、retry 配置。
    - [x] 增加图片、文档、文件输入解析能力。
+   - [x] 将 graph 和 tool selector 的模型实例改为延迟初始化，避免导入时创建模型。
    - [ ] 增加 token 和调用成本统计。
+
+7. [ ] 代码结构优化
+   - [x] 提取公共 `agent_app/utils/messages.py`，统一 LangChain message 文本提取。
+   - [x] 提取 `agent_app/cli_stream.py`，拆分 CLI 流式输出渲染。
+   - [x] 保留 `agent_app/intent.py` 和样例检查脚本作为历史兼容路径，后续单独归档或删除。
+   - [ ] 第二阶段拆分 `graph.py` 节点实现与图构建。
 
 ### P2：补齐知识与记忆能力
 

@@ -1,5 +1,6 @@
 """Orchestrator 编排层测试。"""
 
+import importlib
 import unittest
 from unittest.mock import patch
 
@@ -250,7 +251,7 @@ class OrchestratorTest(unittest.TestCase):
         }
         fake_model = FakeToolModel()
 
-        with patch("agent_app.graph.llm_with_tools", fake_model):
+        with patch("agent_app.graph._get_llm_with_tools", return_value=fake_model):
             result = agent_node(state)
 
         self.assertTrue(fake_model.called)
@@ -272,10 +273,20 @@ class OrchestratorTest(unittest.TestCase):
 
         fake_llm = FakeLLM()
 
-        with patch("agent_app.graph.llm", fake_llm):
+        with patch("agent_app.graph._get_chat_llm", return_value=fake_llm):
             _invoke_tool_agent([], {"candidate_tool_names": ["fetch_url"]})
 
         self.assertEqual(fake_llm.bound_tool_names, ["fetch_url"])
+
+    def test_graph_import_does_not_initialize_chat_model(self):
+        """导入 graph 模块时不初始化聊天模型。"""
+        import agent_app.graph as graph_module
+
+        with patch("agent_app.graph.get_chat_model", side_effect=AssertionError("不应导入时初始化模型")):
+            reloaded = importlib.reload(graph_module)
+
+        self.assertIsNone(reloaded._chat_llm)
+        self.assertIsNone(reloaded._llm_with_tools)
 
     def test_reflection_node_passes_successful_tool_results(self):
         """成功工具结果通过 reflection。"""

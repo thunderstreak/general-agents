@@ -13,6 +13,7 @@ from typing import Any
 from langchain_core.messages import BaseMessage, messages_from_dict, messages_to_dict
 
 from agent_app.config import SESSION_STORE_DIR
+from agent_app.utils.messages import message_text
 
 
 STATE_VERSION = 1
@@ -61,7 +62,7 @@ def save_session_state(session_id: str, state: dict[str, Any], store_dir: str | 
     now = _now()
     serializable_state = _state_to_json(state)
     messages = state.get("messages", [])
-    user_inputs = [_message_text(message) for message in messages if _message_role(message) == "user"]
+    user_inputs = [message_text(message) for message in messages if _message_role(message) == "user"]
     title = old_metadata.title if old_metadata else _build_title(user_inputs)
     if old_metadata and old_metadata.title.startswith("新会话") and user_inputs:
         title = _build_title(user_inputs)
@@ -169,7 +170,7 @@ def _write_messages_jsonl(path: Path, messages: list[Any]) -> None:
                     {
                         "index": index,
                         "role": _message_role(message),
-                        "content": _message_text(message),
+                        "content": message_text(message),
                         "tool_calls": getattr(message, "tool_calls", []),
                         "tool_call_id": getattr(message, "tool_call_id", ""),
                     },
@@ -189,20 +190,6 @@ def _message_role(message: Any) -> str:
         "system": "system",
     }
     return mapping.get(message_type, str(message_type or "unknown"))
-
-
-def _message_text(message: Any) -> str:
-    """提取消息文本。"""
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                parts.append(str(part.get("text", "")))
-        return "\n".join(parts)
-    return str(content)
 
 
 def _json_safe(value: Any) -> Any:

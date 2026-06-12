@@ -1,12 +1,20 @@
 """命令行交互入口。"""
 
 from agent_app.file_inputs import build_human_message, parse_user_input
-from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, ORCHESTRATOR_MAX_STEPS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
+from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
+from agent_app import cli_stream
 from agent_app.graph import app, resume_confirmed_tool
-from agent_app.memory import load_memory, memory_to_state
-from agent_app.orchestrator import new_trace_id
-from agent_app.output import build_response, render_cli_response
 from agent_app.session_store import create_session, delete_session, list_sessions, load_session_state, save_session_state, session_exists
+from agent_app.state import create_initial_state, ensure_state_defaults, reset_turn_state
+
+
+_stream_chunk_type = cli_stream.stream_chunk_type
+_stream_chunk_data = cli_stream.stream_chunk_data
+_message_chunk_text = cli_stream.message_chunk_text
+_custom_progress_message = cli_stream.custom_progress_message
+_update_progress_message = cli_stream.update_progress_message
+_print_progress = cli_stream.print_progress
+_print_debug_tail = cli_stream.print_debug_tail
 
 
 def run_cli():
@@ -75,27 +83,7 @@ def run_cli():
 
 def _new_state() -> dict:
     """创建新的 CLI Agent state。"""
-    memory = load_memory()
-    return {
-        "messages": [],
-        "tool_selection": {},
-        "plan": {},
-        "reflection": {},
-        "tool_calls": [],
-        "tool_errors": [],
-        "retrieval_results": [],
-        "user_profile": {},
-        "long_term_memory": memory_to_state(memory),
-        "step_count": 0,
-        "max_steps": ORCHESTRATOR_MAX_STEPS,
-        "last_error": {},
-        "pending_confirmation": {},
-        "approved_tool_call_ids": [],
-        "final_response": {},
-        "trace_id": "",
-        "node_runs": [],
-        "memory_updated": False,
-    }
+    return create_initial_state()
 
 
 def _read_user_input() -> str:
@@ -163,27 +151,12 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
 
 def _reset_turn_state(state: dict) -> dict:
     """重置单轮编排状态，保留历史消息和长期记忆。"""
-    state["step_count"] = 0
-    state["max_steps"] = ORCHESTRATOR_MAX_STEPS
-    state["last_error"] = {}
-    state["plan"] = {}
-    state["reflection"] = {}
-    state["retrieval_results"] = []
-    state["final_response"] = {}
-    state["trace_id"] = new_trace_id()
-    state["node_runs"] = []
-    state["memory_updated"] = False
-    state["approved_tool_call_ids"] = state.get("approved_tool_call_ids", [])
-    return state
+    return reset_turn_state(state)
 
 
 def _ensure_state_defaults(state: dict) -> dict:
     """补齐旧会话或损坏会话缺失的 state 字段。"""
-    defaults = _new_state()
-    defaults.update(state)
-    defaults["messages"] = state.get("messages", [])
-    defaults["long_term_memory"] = state.get("long_term_memory") or defaults["long_term_memory"]
-    return defaults
+    return ensure_state_defaults(state)
 
 
 def _save_current_session(session_id: str, state: dict) -> None:
@@ -227,8 +200,7 @@ def _session_metadata_or_current(session_id: str, current_session):
 
 def _print_response(state: dict) -> None:
     """打印统一响应。"""
-    response = state.get("final_response") or build_response(state)
-    print(f"{render_cli_response(response, debug=OUTPUT_DEBUG)}\n")
+    cli_stream.print_response(state)
 
 
 def _run_turn(state: dict) -> dict:
@@ -243,149 +215,6 @@ def _run_turn(state: dict) -> dict:
 
 def _stream_response(state: dict) -> dict:
     """流式执行 LangGraph 并渲染 CLI 输出。"""
-    latest_state = state
-    printed_token = False
-    printed_agent_prefix = False
-    printed_progress: set[str] = set()
-
-    for chunk in app.stream(state, stream_mode=["messages", "updates", "custom", "values"], version="v2"):
-        chunk_type = _stream_chunk_type(chunk)
-        data = _stream_chunk_data(chunk)
-
-        if chunk_type == "values" and isinstance(data, dict):
-            latest_state = data
-            continue
-
-        if chunk_type == "custom":
-            message = _custom_progress_message(data)
-            if message and CLI_STREAM_PROGRESS and not printed_token:
-                printed_agent_prefix = _print_progress(message, printed_agent_prefix, printed_progress)
-            continue
-
-        if chunk_type == "updates":
-            message = _update_progress_message(data)
-            if message and CLI_STREAM_PROGRESS and not printed_token:
-                printed_agent_prefix = _print_progress(message, printed_agent_prefix, printed_progress)
-            continue
-
-        if chunk_type == "messages":
-            token = _message_chunk_text(data)
-            if not token:
-                continue
-            if not printed_agent_prefix:
-                print("Agent: ", end="", flush=True)
-                printed_agent_prefix = True
-            print(token, end="", flush=True)
-            printed_token = True
-
-    if printed_token:
-        print()
-        _print_debug_tail(latest_state)
-        print()
-        return latest_state
-
-    _print_response(latest_state)
-    return latest_state
-
-
-def _stream_chunk_type(chunk) -> str:
-    """获取 LangGraph stream chunk 类型。"""
-    if isinstance(chunk, dict):
-        return str(chunk.get("type", ""))
-    if isinstance(chunk, tuple) and chunk:
-        return str(chunk[0])
-    return ""
-
-
-def _stream_chunk_data(chunk):
-    """获取 LangGraph stream chunk 数据。"""
-    if isinstance(chunk, dict):
-        return chunk.get("data")
-    if isinstance(chunk, tuple) and len(chunk) >= 2:
-        return chunk[1]
-    return None
-
-
-def _message_chunk_text(data) -> str:
-    """提取可展示给用户的模型 token。"""
-    message = None
-    metadata = {}
-    if isinstance(data, tuple) and data:
-        message = data[0]
-        if len(data) > 1 and isinstance(data[1], dict):
-            metadata = data[1]
-    else:
-        message = data
-
-    tags = set(metadata.get("tags") or [])
-    nested_metadata = metadata.get("metadata")
-    if isinstance(nested_metadata, dict):
-        tags.update(nested_metadata.get("tags") or [])
-    if "nostream" in tags:
-        return ""
-
-    if getattr(message, "tool_call_chunks", None) or getattr(message, "tool_calls", None):
-        return ""
-
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        text_parts = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                text_parts.append(str(part.get("text", "")))
-        return "".join(text_parts)
-
-    return ""
-
-
-def _custom_progress_message(data) -> str:
-    """从 custom stream 事件中提取进度文本。"""
-    if isinstance(data, dict):
-        return str(data.get("message") or "")
-    if isinstance(data, str):
-        return data
-    return ""
-
-
-def _update_progress_message(data) -> str:
-    """根据必要状态类节点 update 生成兜底进度文本。"""
-    if not isinstance(data, dict) or len(data) != 1:
-        return ""
-
-    node_name = next(iter(data))
-    labels = {
-        "confirm": "等待人工确认...",
-        "tools": "执行工具中...",
-        "reflection": "核对工具结果...",
-        "error": "生成错误响应...",
-    }
-    return labels.get(node_name, "")
-
-
-def _print_progress(message: str, printed_agent_prefix: bool, printed_progress: set[str]) -> bool:
-    """打印去重后的进度信息。"""
-    if not message or message in printed_progress:
-        return printed_agent_prefix
-    printed_progress.add(message)
-    if printed_agent_prefix:
-        print()
-    print(message, flush=True)
-    return False
-
-
-def _print_debug_tail(state: dict) -> None:
-    """流式结束后补充 debug 信息。"""
-    if not OUTPUT_DEBUG:
-        return
-
-    response = state.get("final_response") or build_response(state)
-    debug_text = render_cli_response(response, debug=True)
-    lines = debug_text.splitlines()
-    try:
-        debug_start = lines.index("Debug:")
-    except ValueError:
-        return
-    print("\n" + "\n".join(lines[debug_start:]))
+    cli_stream.CLI_STREAM_PROGRESS = CLI_STREAM_PROGRESS
+    cli_stream.OUTPUT_DEBUG = OUTPUT_DEBUG
+    return cli_stream.stream_response(app, state)

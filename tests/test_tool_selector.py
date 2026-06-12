@@ -1,6 +1,8 @@
 """工具选择器测试。"""
 
+import importlib
 import unittest
+from unittest.mock import patch
 
 from agent_app.tool_selector import quick_chat_selection, should_enter_tool_mode
 from agent_app.tools import candidate_tool_names_for_text
@@ -82,6 +84,18 @@ class ToolSelectorTest(unittest.TestCase):
     def test_candidate_tools_detect_market_search_only(self):
         """实时行情输入优先筛选网页搜索工具。"""
         self.assertEqual(candidate_tool_names_for_text("我想看今天的股票市场行情"), ["web_search"])
+
+    def test_tool_selector_import_does_not_initialize_model(self):
+        """导入 tool_selector 时不初始化工具选择模型。"""
+        import agent_app.tool_selector as tool_selector_module
+
+        with patch(
+            "agent_app.tool_selector.get_tool_selector_model",
+            side_effect=AssertionError("不应导入时初始化模型"),
+        ):
+            reloaded = importlib.reload(tool_selector_module)
+
+        self.assertIsNone(reloaded._selector_llm)
 
 
 if __name__ == "__main__":
