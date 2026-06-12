@@ -8,7 +8,14 @@ from agent_app.graph import app
 def run_cli():
     """启动命令行 Agent。"""
     print("🧠 LangGraph Agent 启动 (输入 'quit' 退出)\n")
-    state = {"messages": []}  # 持久化状态
+    state = {
+        "messages": [],
+        "tool_selection": {},
+        "tool_calls": [],
+        "tool_errors": [],
+        "retrieval_results": [],
+        "user_profile": {},
+    }  # 持久化状态
 
     while True:
         user_input = input("你: ")

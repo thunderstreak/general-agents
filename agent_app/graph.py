@@ -1,5 +1,6 @@
 """LangGraph 图编排。"""
 
+import operator
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
@@ -15,6 +16,11 @@ from agent_app.tools.runtime import run_tool
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]  # LangGraph 会自动追加消息
+    tool_selection: dict
+    tool_calls: Annotated[list, operator.add]
+    tool_errors: Annotated[list, operator.add]
+    retrieval_results: Annotated[list, operator.add]
+    user_profile: dict
 
 
 llm = ChatOpenAI(model=MODEL_NAME, base_url=BASE_URL, openai_api_key=OPENAI_API_KEY)
@@ -57,7 +63,11 @@ def agent_node(state: AgentState):
         else:
             response = llm_with_tools.invoke(messages)
 
-    return {"messages": [response]}
+    state_update = {"messages": [response]}
+    if "selection" in locals() and selection:
+        state_update["tool_selection"] = selection.to_dict()
+
+    return state_update
 
 
 def _tool_selection_to_message(tool_name: str, tool_args: dict):
@@ -73,14 +83,19 @@ def tool_node(state: AgentState):
     last_msg = messages[-1]
 
     tool_messages = []
+    tool_call_records = []
+    tool_error_records = []
     for tc in last_msg.tool_calls:
         tool_name = tc["name"]
         tool_args = tc["args"]
         print(f"🛠️ 调用工具: {tool_name}({tool_args})")
-        result = run_tool(tool_name, tool_args, tools_by_name, tool_metadata_by_name)
-        tool_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
+        tool_run = run_tool(tool_name, tool_args, tools_by_name, tool_metadata_by_name)
+        tool_call_records.append(tool_run.to_dict())
+        if not tool_run.success:
+            tool_error_records.append(tool_run.to_dict())
+        tool_messages.append(ToolMessage(content=tool_run.result, tool_call_id=tc["id"]))
 
-    return {"messages": tool_messages}
+    return {"messages": tool_messages, "tool_calls": tool_call_records, "tool_errors": tool_error_records}
 
 
 def router(state: AgentState) -> Literal["tools", "__end__"]:

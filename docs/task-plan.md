@@ -11,7 +11,7 @@
 | Prompt 管理 | 已完成 | P1 | 意图分类 prompt 已拆分到 `agent_app/prompts/`，并提供分类样例文件 | 后续可继续增加版本管理和环境区分 |
 | Intent Router 意图路由 | 已完成 | P1 | 已升级为 Tool Selector：基于工具元数据直接选择 `tool_name + args`，支持置信度、低置信度回退和样例检查脚本 | 后续可继续增强多意图和参数补全 |
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`，并按领域拆分到 `agent_app/tools/`；工具运行时支持元数据、白名单、重试、统一错误格式和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
-| State 状态管理 | 已实现但功能不全 | P1 | `AgentState` 当前只有 `messages` | 扩展结构化字段：`intent`、`retrieval_results`、`user_profile`、`tool_errors` |
+| State 状态管理 | 已完成 | P1 | `AgentState` 已包含 `messages`、`tool_selection`、`tool_calls`、`tool_errors`、`retrieval_results`、`user_profile` | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已实现但功能不全 | P1 | 使用 `ChatOpenAI` 接入第三方 `base_url`，支持聊天、工具选择、意图分类 | 补充模型 fallback、超时、token/cost 统计 |
 | RAG 知识检索 | 未实现 | P2 | 暂无文档加载、向量化、向量库、检索链路 | 增加文档导入、embedding、vector store、retriever、引用来源输出 |
 | Memory 记忆 | 已实现但功能不全 | P2 | `messages` 通过 LangGraph `add_messages` 保存当前进程内多轮上下文 | 增加长期记忆、用户偏好、历史摘要；接入数据库或文件存储 |
@@ -59,8 +59,8 @@
    - [x] 增加工具级重试和日志。
    - [x] 增加工具白名单检查。
 
-4. State 状态管理
-   - 扩展 `AgentState`，保存 intent、工具错误、检索结果等结构化状态。
+4. [x] State 状态管理
+   - [x] 扩展 `AgentState`，保存工具选择、工具调用、工具错误、检索结果、用户画像等结构化状态。
 
 5. LLM 大模型
    - 增加模型 fallback。

@@ -2,7 +2,7 @@
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any
 
 
@@ -25,18 +25,37 @@ class ToolRuntimeError(RuntimeError):
     """工具运行时错误。"""
 
 
-def run_tool(tool_name: str, tool_args: dict[str, Any], tools_by_name: dict[str, Any], tool_metadata_by_name: dict[str, ToolMetadata]) -> str:
+@dataclass
+class ToolRunRecord:
+    """工具执行记录。"""
+
+    tool_name: str
+    tool_args: dict[str, Any]
+    success: bool
+    result: str
+    error: str = ""
+    duration_ms: float = 0.0
+    attempts: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换为可写入 LangGraph state 的字典。"""
+        return asdict(self)
+
+
+def run_tool(tool_name: str, tool_args: dict[str, Any], tools_by_name: dict[str, Any], tool_metadata_by_name: dict[str, ToolMetadata]) -> ToolRunRecord:
     """通过统一运行时执行工具。"""
+    start_time = time.perf_counter()
     metadata = tool_metadata_by_name.get(tool_name)
     if metadata is None or tool_name not in tools_by_name:
-        return _format_tool_error(tool_name, "工具未注册或不在白名单中")
+        result = _format_tool_error(tool_name, "工具未注册或不在白名单中")
+        return ToolRunRecord(tool_name=tool_name, tool_args=tool_args, success=False, result=result, error=result)
 
     if metadata.requires_confirmation:
-        return _format_tool_error(tool_name, "工具需要人工确认后才能执行")
+        result = _format_tool_error(tool_name, "工具需要人工确认后才能执行")
+        return ToolRunRecord(tool_name=tool_name, tool_args=tool_args, success=False, result=result, error=result)
 
     attempts = metadata.max_retries + 1
     last_error = None
-    start_time = time.perf_counter()
 
     for attempt in range(1, attempts + 1):
         try:
@@ -47,13 +66,30 @@ def run_tool(tool_name: str, tool_args: dict[str, Any], tools_by_name: dict[str,
             logger.warning("tool_call_failed", extra={"tool_name": tool_name, "attempt": attempt, "error": str(exc)})
             if attempt >= attempts:
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
-                return _format_tool_error(tool_name, f"{exc}", duration_ms)
+                result = _format_tool_error(tool_name, f"{exc}", duration_ms)
+                return ToolRunRecord(
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    success=False,
+                    result=result,
+                    error=str(exc),
+                    duration_ms=duration_ms,
+                    attempts=attempt,
+                )
         else:
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
             logger.info("tool_call_succeeded", extra={"tool_name": tool_name, "attempt": attempt, "duration_ms": duration_ms})
-            return str(result)
+            return ToolRunRecord(
+                tool_name=tool_name,
+                tool_args=tool_args,
+                success=True,
+                result=str(result),
+                duration_ms=duration_ms,
+                attempts=attempt,
+            )
 
-    return _format_tool_error(tool_name, str(last_error))
+    result = _format_tool_error(tool_name, str(last_error))
+    return ToolRunRecord(tool_name=tool_name, tool_args=tool_args, success=False, result=result, error=str(last_error))
 
 
 def _format_tool_error(tool_name: str, message: str, duration_ms: float | None = None) -> str:

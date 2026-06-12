@@ -1,7 +1,7 @@
 """基于工具元数据的工具选择器。"""
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -25,6 +25,10 @@ class ToolSelection:
     args: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.0
     reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """转换为可写入 LangGraph state 的字典。"""
+        return asdict(self)
 
 
 selector_llm = ChatOpenAI(model=MODEL_NAME, base_url=BASE_URL, openai_api_key=OPENAI_API_KEY, temperature=0)
