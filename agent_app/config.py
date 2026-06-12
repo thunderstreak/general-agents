@@ -31,3 +31,5 @@ MODEL_MAX_RETRIES = int(os.getenv("MODEL_MAX_RETRIES", "2"))
 
 MEMORY_FILE_PATH = os.getenv("MEMORY_FILE_PATH", ".agent_memory.json")
 MEMORY_MAX_ITEMS = int(os.getenv("MEMORY_MAX_ITEMS", "50"))
+
+ORCHESTRATOR_MAX_STEPS = int(os.getenv("ORCHESTRATOR_MAX_STEPS", "8"))
