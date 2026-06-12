@@ -35,3 +35,5 @@ MEMORY_MAX_ITEMS = int(os.getenv("MEMORY_MAX_ITEMS", "50"))
 ORCHESTRATOR_MAX_STEPS = int(os.getenv("ORCHESTRATOR_MAX_STEPS", "8"))
 
 OUTPUT_DEBUG = os.getenv("OUTPUT_DEBUG", "false").lower() in {"1", "true", "yes", "y"}
+CLI_STREAM = os.getenv("CLI_STREAM", "true").lower() in {"1", "true", "yes", "y"}
+CLI_STREAM_PROGRESS = os.getenv("CLI_STREAM_PROGRESS", "true").lower() in {"1", "true", "yes", "y"}

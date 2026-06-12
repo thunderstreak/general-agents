@@ -42,12 +42,12 @@ def get_chat_model() -> ChatOpenAI:
 
 def get_tool_selector_model() -> ChatOpenAI:
     """获取工具选择模型。"""
-    return _get_chat_model(TOOL_SELECTOR_MODEL_NAME, temperature=0)
+    return _get_chat_model(TOOL_SELECTOR_MODEL_NAME, temperature=0).with_config(tags=["nostream"])
 
 
 def get_intent_model() -> ChatOpenAI:
     """获取意图分类模型。"""
-    return _get_chat_model(INTENT_MODEL_NAME, temperature=0)
+    return _get_chat_model(INTENT_MODEL_NAME, temperature=0).with_config(tags=["nostream"])
 
 
 def get_vision_model() -> ChatOpenAI:

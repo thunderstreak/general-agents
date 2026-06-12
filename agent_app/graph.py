@@ -5,6 +5,7 @@ import time
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
@@ -45,6 +46,18 @@ class AgentState(TypedDict):
 
 llm = get_chat_model()
 llm_with_tools = llm.bind_tools(tools)
+
+
+def _emit_progress(message: str, event: str = "progress", **metadata) -> None:
+    """发送 CLI 可消费的流式进度事件。"""
+    try:
+        writer = get_stream_writer()
+    except RuntimeError:
+        return
+
+    payload = {"event": event, "message": message}
+    payload.update(metadata)
+    writer(payload)
 
 
 def _latest_human_message(messages: list):
@@ -101,6 +114,7 @@ def retrieval_node(state: AgentState):
 
     retrieval_results = []
     if should_retrieve(user_text):
+        _emit_progress("检索中...", node="retrieval")
         retrieval_results.append(
             {
                 "source": "local_rag_placeholder",
@@ -132,6 +146,7 @@ def agent_node(state: AgentState):
         model_messages = _with_context(messages, memory_state, state.get("retrieval_results", []))
 
         if isinstance(messages[-1], ToolMessage):
+            _emit_progress("思考中...", node="agent")
             response = invoke_with_fallback(
                 [
                     SystemMessage(
@@ -151,8 +166,10 @@ def agent_node(state: AgentState):
             if selection and selection.action == "tool":
                 response = _tool_selection_to_message(selection.tool_name, selection.args)
             elif selection and selection.action == "chat":
+                _emit_progress("思考中...", node="agent")
                 response = invoke_with_fallback(model_messages)
             else:
+                _emit_progress("思考中...", node="agent")
                 response = llm_with_tools.invoke(model_messages)
 
         state_update = {**step_update, "messages": [response], "node_runs": [_node_run("agent", start_time)]}
@@ -171,6 +188,7 @@ def agent_node(state: AgentState):
 def confirmation_node(state: AgentState):
     """处理需要人工确认的工具调用。"""
     start_time = time.perf_counter()
+    _emit_progress("等待人工确认...", node="confirmation")
     last_msg = state["messages"][-1]
     tool_call = last_msg.tool_calls[0]
     pending = confirmation_state(tool_call["name"], tool_call["args"], tool_call["id"])
@@ -198,11 +216,14 @@ def tool_node(state: AgentState):
     for tc in last_msg.tool_calls:
         tool_name = tc["name"]
         tool_args = tc["args"]
-        print(f"🛠️ 调用工具: {tool_name}({tool_args})")
+        _emit_progress(f"调用工具 {tool_name}...", event="tool_started", node="tools", tool_name=tool_name)
         tool_run = run_tool(tool_name, tool_args, tools_by_name, tool_metadata_by_name)
         tool_call_records.append(tool_run.to_dict())
         if not tool_run.success:
             tool_error_records.append(tool_run.to_dict())
+            _emit_progress(f"工具 {tool_name} 调用失败。", event="tool_failed", node="tools", tool_name=tool_name)
+        else:
+            _emit_progress(f"工具 {tool_name} 调用完成。", event="tool_succeeded", node="tools", tool_name=tool_name)
         tool_messages.append(ToolMessage(content=tool_run.result, tool_call_id=tc["id"]))
 
     state_update = {
@@ -220,6 +241,7 @@ def tool_node(state: AgentState):
 def memory_node(state: AgentState):
     """在最终回复后更新长期记忆。"""
     start_time = time.perf_counter()
+    _emit_progress("更新记忆...", node="memory")
     latest_human_message = _latest_human_message(state["messages"])
     last_message = state["messages"][-1]
     if not latest_human_message or not isinstance(last_message, AIMessage):
@@ -241,6 +263,7 @@ def memory_node(state: AgentState):
 def error_node(state: AgentState):
     """统一错误响应节点。"""
     start_time = time.perf_counter()
+    _emit_progress("生成错误响应...", node="error")
     last_error = state.get("last_error") or error_state("未知编排错误")
     message = AIMessage(content=f"执行失败：{last_error.get('message', '未知错误')}")
     return {"messages": [message], "node_runs": [_node_run("error", start_time)]}
@@ -249,6 +272,7 @@ def error_node(state: AgentState):
 def response_node(state: AgentState):
     """统一输出结构节点。"""
     start_time = time.perf_counter()
+    _emit_progress("整理响应...", node="response")
     response = build_response(state)
     return {"final_response": response, "node_runs": [_node_run("response", start_time)]}
 

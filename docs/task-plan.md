@@ -13,12 +13,12 @@
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`，并按领域拆分到 `agent_app/tools/`；工具运行时支持元数据、白名单、重试、统一错误格式和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
 | State 状态管理 | 已完成 | P1 | `AgentState` 已包含 `messages`、`tool_selection`、`tool_calls`、`tool_errors`、`retrieval_results`、`user_profile` | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
-| RAG 知识检索 | 未实现 | P2 | 暂无文档加载、向量化、向量库、检索链路 | 增加文档导入、embedding、vector store、retriever、引用来源输出 |
+| RAG 知识检索 | 未实现 | P2 | 已有 `EMBEDDING_MODEL_NAME`、`get_embedding_model()`、`retrieval_node`、`retrieval_results` 和输出层来源展示预留；尚未实现真实知识库导入、切分、向量化、Chroma 向量库和检索 | 第一版实现本地文件知识库、文本切分、embedding、Chroma vector store、retriever、引用来源输出和 CLI 知识库命令 |
 | Memory 记忆 | 已完成 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 后续可增加记忆管理命令、隐私策略、语义检索和数据库存储 |
 | Orchestrator 编排层 | 已完成 | P2 | `agent_app/graph.py` 使用 LangGraph 编排 retrieval/agent/tool/confirmation/memory/error/response 节点，支持循环保护、失败分支、人工确认预留、统一输出和节点 trace | 后续可接入真实 RAG、checkpoint 和多会话恢复 |
-| 数据存储 | 未实现 | P2 | 暂无数据库或文件存储 | 为 memory、RAG 文档、用户配置增加持久化存储 |
+| 数据存储 | 未实现 | P2 | 当前仅有 `.agent_memory.json` 本地记忆文件；会话、RAG 文档/chunk 元数据、Chroma 向量索引、工具记录和 trace 尚未持久化 | 第一版使用 SQLite 存储 session、messages、memory、RAG 文档/chunk 元数据、tool runs、node runs 和用户配置；使用 Chroma 存储向量索引 |
 | 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出 | 后续增加 API/前端输出适配和更丰富的 Markdown 渲染 |
-| API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行 | 增加 FastAPI/HTTP API、会话管理、并发用户隔离 |
+| API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行；输出层已提供可复用的结构化 `final_response` | 增加 FastAPI HTTP API、内存 session store、会话创建/恢复、确认流程 API 化、健康检查和基础测试 |
 
 ## 任务优先级
 
@@ -73,8 +73,17 @@
 ### P2：补齐知识与记忆能力
 
 1. RAG 知识检索
-   - 新增文档加载、切分、embedding、向量存储和检索工具。
-   - 在 LangGraph 中增加 RAG 节点。
+   - [ ] 复用文件解析模块导入本地文档，支持 `.txt`、`.md`、`.json`、`.csv`、`.pdf`、`.docx`、`.xlsx`。
+   - [ ] 增加文本 chunk 切分能力，支持 chunk size 和 overlap 配置。
+   - [ ] 调用 `get_embedding_model()` 将 chunk 向量化。
+   - [ ] 使用 Chroma 作为向量数据库，保存 chunk embedding 和 metadata。
+   - [ ] 增加 Chroma 配置，例如 `CHROMA_PERSIST_DIR=.chroma`、`CHROMA_COLLECTION_NAME=agent_knowledge`。
+   - [ ] 增加 retriever，根据用户问题生成 query embedding 并返回 top_k 相似 chunk。
+   - [ ] 将 `retrieval_node` 的 placeholder 替换为真实检索结果。
+   - [ ] 将检索结果注入模型上下文，回答时要求引用来源。
+   - [ ] 输出层展示文档名、路径、chunk id、score 等来源信息。
+   - [ ] 增加 CLI 知识库维护命令，例如 `rag add @文件路径`、`rag list`、`rag clear`。
+   - [ ] 增加 RAG 测试：导入、切分、检索、无结果回退、来源输出。
 
 2. 长期 Memory
    - [x] 增加用户画像和历史摘要存储。
@@ -93,7 +102,23 @@
    - [ ] 增加 checkpoint 和多会话恢复。
 
 4. 数据存储
-   - 为 RAG、长期记忆、会话记录增加持久化存储。
+   - [ ] 选择第一版存储方案：优先使用 SQLite，避免一开始引入复杂数据库。
+   - [ ] 增加数据库配置，例如 `DATABASE_URL=sqlite:///agent_app.db`。
+   - [ ] 新增数据库初始化模块，负责建表和连接管理。
+   - [ ] 增加 `sessions` 表，保存 `session_id`、用户标识、创建时间、更新时间和状态摘要。
+   - [ ] 增加 `messages` 表，保存每轮 Human/AI/Tool message，支持会话恢复。
+   - [ ] 增加 `memory_items` 表，替代或兼容当前 `.agent_memory.json`，支持按用户/会话隔离长期记忆。
+   - [ ] 增加 `documents` 表，保存 RAG 文档 id、文件名、路径、hash、导入时间和 metadata。
+   - [ ] 增加 `document_chunks` 表，保存 chunk id、document id、内容、顺序、token 估算和 metadata。
+   - [ ] RAG 向量索引使用 Chroma；SQLite 只保存文档和 chunk 业务元数据，以及 Chroma collection/chunk id 的映射关系。
+   - [ ] 增加 `tool_runs` 表，保存工具名、参数、结果、成功/失败、耗时和错误信息。
+   - [ ] 增加 `node_runs` 表，保存 `trace_id`、节点名、耗时、成功/失败和错误信息。
+   - [ ] 增加 `user_configs` 表，保存用户偏好、模型配置、输出配置和权限配置。
+   - [ ] 增加数据隔离策略，确保不同用户、session、知识库之间不会串数据。
+   - [ ] 增加数据清理能力：删除会话、清空记忆、删除文档、重建索引。
+   - [ ] 增加轻量 schema migration 机制，便于后续表结构升级。
+   - [ ] 增加数据存储测试：建表、CRUD、会话恢复、memory 迁移、RAG 文档/chunk 元数据写入和删除。
+   - [ ] 后续增强：Redis session 缓存、PostgreSQL 生产库、Chroma server 模式、数据加密、数据导入/导出、过期会话 TTL。
 
 ### P3：产品化与服务化
 
@@ -103,8 +128,21 @@
    - [ ] 支持更丰富的 Markdown 渲染或前端/API 输出。
 
 2. API / 服务化
-   - 在 CLI 稳定后增加 HTTP API。
-   - 支持多会话隔离和会话恢复。
+   - [ ] 增加 FastAPI 服务入口，例如 `agent_app/api.py`。
+   - [ ] 新增 `fastapi`、`uvicorn` 依赖和启动说明。
+   - [ ] 定义 `ChatRequest`、`ChatResponse` 等请求/响应模型，复用输出层 `final_response`。
+   - [ ] 增加 `POST /chat`，支持 `message` 和可选 `session_id`，无 session 时自动创建。
+   - [ ] 增加内存 session store，按 `session_id` 保存独立 Agent state，避免多用户上下文串线。
+   - [ ] 增加会话恢复能力，有 `session_id` 时继续原会话。
+   - [ ] 增加确认流程接口，例如 `POST /sessions/{session_id}/confirm` 或在 chat 请求中传确认结果。
+   - [ ] 增加 `GET /health` 健康检查。
+   - [ ] 增加 `GET /sessions/{session_id}` 和 `DELETE /sessions/{session_id}`，便于调试和释放内存。
+   - [ ] 增加 HTTP 统一错误响应，不向客户端暴露 traceback。
+   - [ ] 增加 CORS 配置，为后续前端接入预留。
+   - [ ] 为内存 session store 增加最小锁保护，避免并发请求同时修改同一会话。
+   - [ ] 第一版暂不做文件上传，后续再支持 multipart 文件上传并复用文件解析模块。
+   - [ ] 增加 API 测试：health、chat、session 续聊、确认流程、错误响应。
+   - [ ] 后续增强：SQLite/Redis 会话持久化、用户鉴权、请求限流、SSE/WebSocket 流式输出、Docker 部署。
 
 ## 当前结论
 

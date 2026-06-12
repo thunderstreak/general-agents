@@ -1,12 +1,14 @@
 """Orchestrator 编排层测试。"""
 
 import unittest
+from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall
 
 from agent_app.graph import agent_node, response_node, retrieval_node, router
 from agent_app.orchestrator import should_retrieve
 from agent_app.output import build_response
+from agent_app.tool_selector import ToolSelection
 
 
 def _base_state():
@@ -73,6 +75,29 @@ class OrchestratorTest(unittest.TestCase):
         self.assertNotIn("messages", result)
         self.assertEqual(result["step_count"], 1)
 
+    def test_agent_node_does_not_emit_thinking_for_existing_tool_call(self):
+        """已有 tool_call 时不输出思考进度，避免确认后噪音。"""
+        state = _base_state()
+        tool_call = ToolCall(name="web_search", args={"query": "test"}, id="tool_1")
+        state["messages"] = [HumanMessage(content="搜索 test"), AIMessage(content="", tool_calls=[tool_call])]
+
+        with patch("agent_app.graph._emit_progress") as emit_progress:
+            agent_node(state)
+
+        emit_progress.assert_not_called()
+
+    def test_agent_node_does_not_emit_thinking_when_selecting_tool(self):
+        """首轮选择工具时不输出思考进度，直接进入工具进度。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="今天天气 如何")]
+        selection = ToolSelection(action="tool", tool_name="get_weather", args={"city": ""}, confidence=1.0)
+
+        with patch("agent_app.graph.select_tool", return_value=selection), patch("agent_app.graph._emit_progress") as emit_progress:
+            result = agent_node(state)
+
+        emit_progress.assert_not_called()
+        self.assertEqual(result["messages"][0].tool_calls[0]["name"], "get_weather")
+
     def test_retrieval_placeholder(self):
         """RAG 预留节点在命中关键词时写入检索结果。"""
         state = _base_state()
@@ -82,6 +107,22 @@ class OrchestratorTest(unittest.TestCase):
 
         self.assertTrue(should_retrieve("根据知识库回答 LangGraph 是什么"))
         self.assertEqual(result["retrieval_results"][0]["source"], "local_rag_placeholder")
+
+    def test_retrieval_node_only_emits_progress_when_retrieving(self):
+        """只有命中检索关键词时才输出检索进度。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="今天天气 如何")]
+
+        with patch("agent_app.graph._emit_progress") as emit_progress:
+            retrieval_node(state)
+
+        emit_progress.assert_not_called()
+
+        state["messages"] = [HumanMessage(content="根据知识库回答 LangGraph 是什么")]
+        with patch("agent_app.graph._emit_progress") as emit_progress:
+            retrieval_node(state)
+
+        emit_progress.assert_called_once_with("检索中...", node="retrieval")
 
     def test_response_node_builds_final_response(self):
         """response node 输出统一结构。"""
