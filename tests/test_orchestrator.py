@@ -5,7 +5,16 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
-from agent_app.graph import after_tool_router, planning_node, reflection_node, agent_node, response_node, retrieval_node, router
+from agent_app.graph import (
+    _invoke_tool_agent,
+    after_tool_router,
+    planning_node,
+    reflection_node,
+    agent_node,
+    response_node,
+    retrieval_node,
+    router,
+)
 from agent_app.orchestrator import should_retrieve
 from agent_app.output import build_response
 
@@ -153,6 +162,26 @@ class OrchestratorTest(unittest.TestCase):
         result = planning_node(state)
 
         self.assertEqual(result["plan"]["mode"], "tool_agent")
+        self.assertEqual(result["plan"]["candidate_tool_names"], ["web_search"])
+
+    def test_planning_node_url_question_enters_tool_agent(self):
+        """URL 问题进入 tool_agent plan。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="总结 https://example.com 这篇文章")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "tool_agent")
+        self.assertEqual(result["plan"]["candidate_tool_names"], ["fetch_url"])
+
+    def test_planning_node_weather_question_records_candidate_tool(self):
+        """天气问题只记录天气候选工具。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="今天天气如何")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["candidate_tool_names"], ["get_weather"])
 
     def test_planning_node_multilingual_chat_skips_tool_selector(self):
         """多语言普通问候直接 chat。"""
@@ -226,6 +255,27 @@ class OrchestratorTest(unittest.TestCase):
 
         self.assertTrue(fake_model.called)
         self.assertEqual(result["messages"][0].content, "")
+
+    def test_invoke_tool_agent_binds_candidate_tools_only(self):
+        """tool_agent 只绑定 plan 中记录的候选工具。"""
+        class FakeToolModel:
+            def invoke(self, messages):
+                return AIMessage(content="")
+
+        class FakeLLM:
+            def __init__(self):
+                self.bound_tool_names = []
+
+            def bind_tools(self, bound_tools):
+                self.bound_tool_names = [tool.name for tool in bound_tools]
+                return FakeToolModel()
+
+        fake_llm = FakeLLM()
+
+        with patch("agent_app.graph.llm", fake_llm):
+            _invoke_tool_agent([], {"candidate_tool_names": ["fetch_url"]})
+
+        self.assertEqual(fake_llm.bound_tool_names, ["fetch_url"])
 
     def test_reflection_node_passes_successful_tool_results(self):
         """成功工具结果通过 reflection。"""

@@ -1,34 +1,38 @@
 """工具注册中心。"""
 
-from agent_app.tools.location import get_location
-from agent_app.tools.runtime import ToolMetadata
-from agent_app.tools.weather import get_weather
-from agent_app.tools.web_search import web_search
+from agent_app.tools.location import TOOL_METADATA as LOCATION_METADATA, get_location
+from agent_app.tools.url_fetch import TOOL_METADATA as URL_FETCH_METADATA, fetch_url
+from agent_app.tools.weather import TOOL_METADATA as WEATHER_METADATA, get_weather
+from agent_app.tools.web_search import TOOL_METADATA as WEB_SEARCH_METADATA, web_search
 
 
-tools = [get_location, get_weather, web_search]
+tools = [get_location, get_weather, web_search, fetch_url]
 tools_by_name = {tool.name: tool for tool in tools}
-tool_metadata = [
-    ToolMetadata(
-        name="get_location",
-        category="location",
-        description="通过当前公网 IP 查询大致位置。",
-        timeout_seconds=10,
-        max_retries=1,
-    ),
-    ToolMetadata(
-        name="get_weather",
-        category="weather",
-        description="查询指定城市的实时天气；未提供城市时自动使用 IP 定位城市。",
-        timeout_seconds=10,
-        max_retries=1,
-    ),
-    ToolMetadata(
-        name="web_search",
-        category="search",
-        description="按关键词搜索外部网页，返回标题、链接和摘要。",
-        timeout_seconds=10,
-        max_retries=1,
-    ),
-]
+tool_metadata = [LOCATION_METADATA, WEATHER_METADATA, WEB_SEARCH_METADATA, URL_FETCH_METADATA]
 tool_metadata_by_name = {metadata.name: metadata for metadata in tool_metadata}
+
+
+def candidate_tool_names_for_text(text: str) -> list[str]:
+    """根据本地触发词筛选候选工具名，用于减少绑定给模型的工具集合。"""
+    normalized = _normalize_tool_text(text)
+    if not normalized:
+        return []
+
+    candidates = []
+    for metadata in tool_metadata:
+        if any(str(keyword).lower() in normalized for keyword in metadata.trigger_keywords):
+            candidates.append(metadata.name)
+    return candidates
+
+
+def candidate_tools_for_text(text: str):
+    """根据用户输入返回候选工具；没有命中时回退到全部工具。"""
+    candidate_names = candidate_tool_names_for_text(text)
+    if not candidate_names:
+        return tools
+    return [tools_by_name[name] for name in candidate_names if name in tools_by_name]
+
+
+def _normalize_tool_text(text: str) -> str:
+    """标准化工具触发判断文本。"""
+    return str(text or "").strip().lower()

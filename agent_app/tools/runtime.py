@@ -19,6 +19,7 @@ class ToolMetadata:
     timeout_seconds: int = 10
     max_retries: int = 1
     requires_confirmation: bool = False
+    trigger_keywords: tuple[str, ...] = ()
 
 
 class ToolRuntimeError(RuntimeError):

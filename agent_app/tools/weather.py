@@ -6,6 +6,17 @@ import requests
 from langchain_core.tools import tool
 
 from agent_app.tools.location import locate_city_by_ip
+from agent_app.tools.runtime import ToolMetadata
+
+
+TOOL_METADATA = ToolMetadata(
+    name="get_weather",
+    category="weather",
+    description="查询指定城市的实时天气；未提供城市时自动使用 IP 定位城市。",
+    timeout_seconds=10,
+    max_retries=1,
+    trigger_keywords=("天气", "气温", "下雨", "weather", "forecast"),
+)
 
 
 @tool

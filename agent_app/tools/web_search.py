@@ -6,6 +6,44 @@ import requests
 from langchain_core.tools import tool
 
 from agent_app.tools.parsers import BingHTMLParser, DuckDuckGoHTMLParser
+from agent_app.tools.runtime import ToolMetadata
+
+
+TOOL_METADATA = ToolMetadata(
+    name="web_search",
+    category="search",
+    description="按关键词搜索外部网页，返回标题、链接和摘要。",
+    timeout_seconds=10,
+    max_retries=1,
+    trigger_keywords=(
+        "搜索",
+        "查一下",
+        "查询",
+        "最新",
+        "新闻",
+        "search",
+        "google",
+        "bing",
+        "联网",
+        "实时",
+        "当前",
+        "today",
+        "now",
+        "current",
+        "recent",
+        "股票",
+        "股市",
+        "行情",
+        "市场",
+        "汇率",
+        "价格",
+        "走势",
+        "政策",
+        "法规",
+        "公告",
+        "release",
+    ),
+)
 
 
 def _format_search_results(results: list[dict[str, str]]) -> str:

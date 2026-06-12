@@ -3,6 +3,7 @@
 import unittest
 
 from agent_app.tool_selector import quick_chat_selection, should_enter_tool_mode
+from agent_app.tools import candidate_tool_names_for_text
 
 
 class ToolSelectorTest(unittest.TestCase):
@@ -64,6 +65,23 @@ class ToolSelectorTest(unittest.TestCase):
         self.assertTrue(should_enter_tool_mode("根据知识库回答 LangGraph 是什么"))
         self.assertTrue(should_enter_tool_mode("总结 [文件: docs/task-plan.md]"))
         self.assertTrue(should_enter_tool_mode("请记住我喜欢中文回答"))
+
+    def test_should_enter_tool_mode_detects_url(self):
+        """URL 输入进入工具模式。"""
+        self.assertTrue(should_enter_tool_mode("总结 https://example.com 这篇文章"))
+        self.assertTrue(should_enter_tool_mode("fetch url https://example.com"))
+
+    def test_candidate_tools_detect_url_fetch_only(self):
+        """URL 输入优先筛选 URL 抓取工具。"""
+        self.assertEqual(candidate_tool_names_for_text("总结 https://example.com 这篇文章"), ["fetch_url"])
+
+    def test_candidate_tools_detect_weather_only(self):
+        """天气输入优先筛选天气工具。"""
+        self.assertEqual(candidate_tool_names_for_text("今天天气如何"), ["get_weather"])
+
+    def test_candidate_tools_detect_market_search_only(self):
+        """实时行情输入优先筛选网页搜索工具。"""
+        self.assertEqual(candidate_tool_names_for_text("我想看今天的股票市场行情"), ["web_search"])
 
 
 if __name__ == "__main__":

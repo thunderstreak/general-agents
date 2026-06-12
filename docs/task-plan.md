@@ -10,8 +10,8 @@
 | 安全与权限 | 未实现 | P0 | 工具可直接调用外部接口 | 增加工具白名单、敏感操作确认、API key 保护、输入过滤 |
 | 感知理解 | 已实现但分散 | P1 | CLI 支持文本输入和 `@文件路径`，文件解析模块支持文本、文档、表格、图片输入 | 增加统一 perception 节点，规范输入解析结果、附件元数据和多模态能力判断 |
 | Prompt 管理 | 已完成 | P1 | 意图分类 prompt 已拆分到 `agent_app/prompts/`，并提供分类样例文件 | 后续可继续增加版本管理和环境区分 |
-| 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具选择主要交给绑定工具的模型，Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
-| Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`，并按领域拆分到 `agent_app/tools/`；工具运行时支持元数据、白名单、重试、统一错误格式和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
+| 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
+| Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
 | State 状态管理 | 已完成 | P1 | `AgentState` 已包含 `messages`、`tool_selection`、`plan`、`reflection`、`tool_calls`、`tool_errors`、`retrieval_results`、`user_profile` | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
 | RAG 知识检索 | 未实现 | P2 | 已有 `EMBEDDING_MODEL_NAME`、`get_embedding_model()`、`retrieval_node`、`retrieval_results` 和输出层来源展示预留；尚未实现真实知识库导入、切分、向量化、Chroma 向量库和检索 | 第一版实现本地文件知识库、文本切分、embedding、Chroma vector store、retriever、引用来源输出和 CLI 知识库命令 |
@@ -56,6 +56,7 @@
 2. [ ] 测试基础建设
    - [x] 增加 `unittest` 测试目录和基础测试。
    - [ ] 为天气工具、定位工具、网页搜索工具补 mock 测试。
+   - [x] 为 URL Fetch 工具补 mock 测试。
    - [ ] 为工具选择、规划、反思和端到端链路增加模型 mock 测试。
 
 3. [ ] 日志与可观测性
@@ -86,10 +87,12 @@
    - [x] 将 `tool_selector` 结果纳入明确的 plan step。
    - [x] 增加本地快速意图短路，明显普通对话跳过工具选择模型。
    - [x] 改为本地工具意图 gate，明确工具意图进入 `tool_agent`，由绑定工具模型决策具体工具。
+   - [x] 基于工具 metadata 先筛选候选工具，再绑定给 tool-agent 模型，降低工具增多后的上下文占用。
    - [ ] 支持多步任务拆解、参数补全和低置信度追问。
 
 4. [x] Tool 工具调用
    - [x] 增加工具元数据和统一错误格式。
+   - [x] 将工具 metadata 就近声明到工具模块内，注册中心只负责汇总。
    - [x] 增加工具级重试和日志。
    - [x] 增加工具白名单检查。
    - [ ] 支持多工具调用计划和工具结果聚合。

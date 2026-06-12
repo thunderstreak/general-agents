@@ -8,31 +8,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent_app.llm import get_tool_selector_model
 from agent_app.prompt_loader import load_prompt
-from agent_app.tools import tool_metadata
+from agent_app.tools import candidate_tool_names_for_text, tool_metadata
 
 
 SelectorAction = Literal["tool", "chat", "auto"]
 LOW_CONFIDENCE_THRESHOLD = 0.7
-TOOL_MODE_KEYWORDS = (
-    "天气",
-    "气温",
-    "下雨",
-    "weather",
-    "forecast",
-    "搜索",
-    "查一下",
-    "查询",
-    "最新",
-    "新闻",
-    "search",
-    "google",
-    "bing",
-    "联网",
-    "我在哪",
-    "当前位置",
-    "定位",
-    "location",
-    "ip",
+NON_TOOL_MODE_KEYWORDS = (
     "知识库",
     "文档",
     "资料库",
@@ -107,7 +88,10 @@ def should_enter_tool_mode(user_text: str) -> bool:
     if not normalized:
         return False
 
-    if any(keyword in normalized for keyword in TOOL_MODE_KEYWORDS):
+    if candidate_tool_names_for_text(normalized):
+        return True
+
+    if any(keyword in normalized for keyword in NON_TOOL_MODE_KEYWORDS):
         return True
 
     return any(keyword in normalized for keyword in REALTIME_KEYWORDS) and any(

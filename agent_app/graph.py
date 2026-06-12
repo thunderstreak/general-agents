@@ -21,7 +21,7 @@ from agent_app.orchestrator import (
 )
 from agent_app.output import build_response
 from agent_app.tool_selector import ToolSelection, should_enter_tool_mode
-from agent_app.tools import tool_metadata_by_name, tools, tools_by_name
+from agent_app.tools import candidate_tool_names_for_text, tool_metadata_by_name, tools, tools_by_name
 from agent_app.tools.runtime import run_tool
 
 
@@ -191,7 +191,7 @@ def agent_node(state: AgentState):
                 response = _tool_selection_to_message(step["tool_name"], step.get("args") or {})
             elif action == "tool_agent":
                 _emit_progress("需要外部信息，准备调用工具...", node="agent")
-                response = llm_with_tools.invoke(model_messages)
+                response = _invoke_tool_agent(model_messages, state.get("plan") or {})
             elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
@@ -396,7 +396,7 @@ def _planning_selection(user_text: str, has_user_message: bool) -> ToolSelection
     if not has_user_message:
         return ToolSelection(action="auto", reason="没有找到用户消息")
     if should_enter_tool_mode(user_text):
-        return ToolSelection(action="auto", confidence=1.0, reason="本地判断：进入工具 agent 模式")
+        return _tool_agent_selection(user_text)
     return ToolSelection(action="chat", confidence=1.0, reason="本地判断：普通对话")
 
 
@@ -412,12 +412,14 @@ def _selection_to_plan(selection: ToolSelection) -> dict:
         "args": selection.args if action == "tool" else {},
         "reason": selection.reason,
     }
+    candidate_tool_names = selection.args.get("_candidate_tool_names", []) if isinstance(selection.args, dict) else []
     return {
         "intent": _plan_intent(selection),
         "mode": action,
         "plan_steps": [step],
         "current_step": 0,
         "decision_reason": selection.reason,
+        "candidate_tool_names": candidate_tool_names,
         "status": "ready",
     }
 
@@ -436,6 +438,26 @@ def _plan_intent(selection: ToolSelection) -> str:
     if selection.action == "chat":
         return "chat"
     return "auto"
+
+
+def _tool_agent_selection(user_text: str) -> ToolSelection:
+    """生成 tool-agent 选择结果，并记录本轮候选工具。"""
+    candidate_tool_names = candidate_tool_names_for_text(user_text)
+    return ToolSelection(
+        action="auto",
+        args={"_candidate_tool_names": candidate_tool_names},
+        confidence=1.0,
+        reason="本地判断：进入工具 agent 模式",
+    )
+
+
+def _invoke_tool_agent(model_messages: list, plan: dict):
+    """调用绑定候选工具的模型，候选为空时回退到全量工具。"""
+    candidate_names = plan.get("candidate_tool_names") if isinstance(plan, dict) else []
+    candidate_tools = [tools_by_name[name] for name in candidate_names if name in tools_by_name] if isinstance(candidate_names, list) else []
+    if not candidate_tools:
+        return llm_with_tools.invoke(model_messages)
+    return llm.bind_tools(candidate_tools).invoke(model_messages)
 
 
 def _current_plan_step(plan: dict) -> dict:

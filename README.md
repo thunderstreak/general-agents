@@ -8,7 +8,7 @@
 - 基于 LangGraph 的节点编排。
 - 支持 OpenAI-compatible API，包括官方 OpenAI 或第三方兼容服务。
 - 支持轻量 Planning（规划决策），普通对话默认直接回答；明确工具意图会进入可调用工具的 agent 模式。
-- 支持天气、IP 定位、网页搜索等工具调用。
+- 支持天气、IP 定位、网页搜索、URL 内容抓取等工具调用。
 - 支持本地长期记忆，默认写入 `.agent_memory.json`。
 - 支持通过 `@文件路径` 读取文本、图片、PDF、DOCX、XLSX、CSV、JSON 等文件输入。
 - 保留 RAG（Retrieval-Augmented Generation，检索增强生成）节点结构，当前为占位实现。
@@ -118,6 +118,12 @@ CLI_STREAM_PROGRESS=false
 
 ```text
 你: 搜索今天 OpenAI 的最新消息
+```
+
+URL 内容抓取：
+
+```text
+你: 总结 https://example.com 这篇文章
 ```
 
 文件输入：
@@ -230,13 +236,14 @@ CLI 渲染输出
 
 ## 工具系统
 
-工具注册在 `agent_app/tools/__init__.py`。
+工具函数和 `ToolMetadata` 就近放在各自工具模块内，`agent_app/tools/__init__.py` 只负责汇总注册。
 
 当前内置工具：
 
 - `get_location`：通过公网 IP 查询大致位置，数据源为 `ip-api.com`。
 - `get_weather`：查询指定城市实时天气；未提供城市时会尝试通过 IP 定位城市，数据源为 `wttr.in`。
 - `web_search`：通过 DuckDuckGo 和 Bing 搜索网页，返回标题、链接和摘要。
+- `fetch_url`：抓取指定 HTTP/HTTPS URL 的文本内容，禁止访问 localhost 和内网地址。
 
 工具统一由 `agent_app/tools/runtime.py` 执行，支持：
 
@@ -245,6 +252,7 @@ CLI 渲染输出
 - 运行耗时记录。
 - 统一错误格式。
 - 人工确认开关。
+- 基于 `ToolMetadata.trigger_keywords` 先筛选候选工具，再绑定给 tool-agent 模型，减少工具数量增加后的上下文占用。
 
 ## 文件输入
 
@@ -340,7 +348,7 @@ python scripts/check_intent_examples.py
 
 ## 开发说明
 
-- 新增工具时，需要在 `agent_app/tools/` 下实现工具函数，并在 `agent_app/tools/__init__.py` 注册工具和 `ToolMetadata`。
+- 新增工具时，需要在 `agent_app/tools/` 下实现工具函数，并在同一模块声明 `TOOL_METADATA`；然后在 `agent_app/tools/__init__.py` 导入工具函数和 metadata 进行汇总注册。
 - 新增 prompt 时，放入 `agent_app/prompts/`，通过 `prompt_loader.load_prompt()` 读取。
 - 需要调整单轮最大编排次数时，修改 `.env` 中的 `ORCHESTRATOR_MAX_STEPS`。
 - 需要查看调试信息时，设置 `OUTPUT_DEBUG=true`。
@@ -363,7 +371,7 @@ OPENAI_API_KEY=your-api-key
 
 ### 工具调用失败
 
-天气、定位和网页搜索依赖外部网络服务。如果网络不可用、服务限流或搜索页面结构变化，工具可能返回失败信息。
+天气、定位、网页搜索和 URL 抓取依赖外部网络服务。如果网络不可用、服务限流、页面结构变化或目标站点限制访问，工具可能返回失败信息。
 
 ### macOS 中文输入无法删除或移动光标
 

@@ -3,6 +3,18 @@
 import requests
 from langchain_core.tools import tool
 
+from agent_app.tools.runtime import ToolMetadata
+
+
+TOOL_METADATA = ToolMetadata(
+    name="get_location",
+    category="location",
+    description="通过当前公网 IP 查询大致位置。",
+    timeout_seconds=10,
+    max_retries=1,
+    trigger_keywords=("我在哪", "当前位置", "定位", "location", "ip"),
+)
+
 
 @tool
 def get_location() -> str:
