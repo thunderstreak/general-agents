@@ -83,26 +83,6 @@ def confirmation_state(tool_name: str, tool_args: dict[str, Any], tool_call_id: 
     }
 
 
-def build_response(state: dict[str, Any]) -> dict[str, Any]:
-    """构造统一输出结构。"""
-    last_message = state["messages"][-1] if state.get("messages") else None
-    content = getattr(last_message, "content", "") if last_message is not None else ""
-    errors = []
-    if state.get("last_error"):
-        errors.append(state["last_error"])
-    errors.extend(state.get("tool_errors", []))
-
-    return {
-        "content": content,
-        "tool_calls": state.get("tool_calls", []),
-        "errors": errors,
-        "retrieval_sources": [item.get("source", "") for item in state.get("retrieval_results", []) if isinstance(item, dict)],
-        "memory_updated": bool(state.get("memory_updated")),
-        "trace_id": state.get("trace_id", ""),
-        "node_runs": state.get("node_runs", []),
-    }
-
-
 def should_retrieve(user_text: str) -> bool:
     """判断是否需要进入 RAG 检索预留节点。"""
     keywords = ("知识库", "文档", "资料库", "内部资料", "根据资料", "检索")

@@ -5,7 +5,8 @@ import unittest
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall
 
 from agent_app.graph import agent_node, response_node, retrieval_node, router
-from agent_app.orchestrator import build_response, should_retrieve
+from agent_app.orchestrator import should_retrieve
+from agent_app.output import build_response
 
 
 def _base_state():

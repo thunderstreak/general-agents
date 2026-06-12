@@ -17,7 +17,7 @@
 | Memory 记忆 | 已完成 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 后续可增加记忆管理命令、隐私策略、语义检索和数据库存储 |
 | Orchestrator 编排层 | 已完成 | P2 | `agent_app/graph.py` 使用 LangGraph 编排 retrieval/agent/tool/confirmation/memory/error/response 节点，支持循环保护、失败分支、人工确认预留、统一输出和节点 trace | 后续可接入真实 RAG、checkpoint 和多会话恢复 |
 | 数据存储 | 未实现 | P2 | 暂无数据库或文件存储 | 为 memory、RAG 文档、用户配置增加持久化存储 |
-| 输出层 | 已实现但功能不全 | P3 | CLI 直接打印 `Agent: ...` | 增加结构化输出、Markdown 渲染、统一错误响应、API/前端输出层 |
+| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出 | 后续增加 API/前端输出适配和更丰富的 Markdown 渲染 |
 | API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行 | 增加 FastAPI/HTTP API、会话管理、并发用户隔离 |
 
 ## 任务优先级
@@ -98,8 +98,9 @@
 ### P3：产品化与服务化
 
 1. 输出层
-   - 增加结构化输出和统一错误响应。
-   - 支持 Markdown 渲染或前端/API 输出。
+   - [x] 增加结构化输出和统一错误响应。
+   - [x] 支持 CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出。
+   - [ ] 支持更丰富的 Markdown 渲染或前端/API 输出。
 
 2. API / 服务化
    - 在 CLI 稳定后增加 HTTP API。

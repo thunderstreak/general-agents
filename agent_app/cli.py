@@ -1,10 +1,11 @@
 """命令行交互入口。"""
 
 from agent_app.file_inputs import build_human_message, parse_user_input
-from agent_app.config import ORCHESTRATOR_MAX_STEPS
+from agent_app.config import ORCHESTRATOR_MAX_STEPS, OUTPUT_DEBUG
 from agent_app.graph import app, resume_confirmed_tool
 from agent_app.memory import load_memory, memory_to_state
 from agent_app.orchestrator import new_trace_id
+from agent_app.output import build_response, render_cli_response
 
 
 def run_cli():
@@ -76,8 +77,5 @@ def _reset_turn_state(state: dict) -> dict:
 
 def _print_response(state: dict) -> None:
     """打印统一响应。"""
-    response = state.get("final_response") or {}
-    content = response.get("content")
-    if content is None:
-        content = state["messages"][-1].content
-    print(f"Agent: {content}\n")
+    response = state.get("final_response") or build_response(state)
+    print(f"{render_cli_response(response, debug=OUTPUT_DEBUG)}\n")

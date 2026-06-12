@@ -12,13 +12,13 @@ from agent_app.config import ORCHESTRATOR_MAX_STEPS
 from agent_app.llm import get_chat_model, invoke_with_fallback
 from agent_app.memory import update_memory_from_turn, with_memory_context
 from agent_app.orchestrator import (
-    build_response,
     confirmation_state,
     error_state,
     new_trace_id,
     should_retrieve,
     success_node_run,
 )
+from agent_app.output import build_response
 from agent_app.tool_selector import select_tool
 from agent_app.tools import tool_metadata_by_name, tools, tools_by_name
 from agent_app.tools.runtime import run_tool
