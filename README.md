@@ -155,6 +155,9 @@ CLI_STREAM_PROGRESS=false
 | `OUTPUT_DEBUG` | 否 | `false` | 是否在 CLI 输出 trace、节点耗时、工具摘要和错误详情。 |
 | `CLI_STREAM` | 否 | `true` | 是否开启 CLI 流式输出。关闭后会等待整轮执行完成再输出。 |
 | `CLI_STREAM_PROGRESS` | 否 | `true` | 流式输出时是否显示检索、工具调用、记忆更新等进度。 |
+| `CLI_INPUT_HISTORY_FILE` | 否 | `.agent_input_history` | CLI 输入历史文件，用于支持上下键查看历史输入。 |
+| `SESSION_STORE_DIR` | 否 | `.agent_sessions` | 文件夹式历史会话存储目录。 |
+| `SESSION_AUTO_SAVE` | 否 | `true` | 是否在每轮对话后自动保存当前会话。 |
 
 ## 项目架构
 
@@ -276,6 +279,36 @@ CLI 支持在用户输入中使用 `@文件路径` 引用本地文件。
 
 `.agent_memory.json` 已在 `.gitignore` 中忽略，不应提交到仓库。
 
+## 历史会话
+
+CLI 启动时默认创建新会话，不会自动恢复上一次对话。历史会话会自动保存到：
+
+```text
+.agent_sessions/
+```
+
+每个会话一个目录，包含：
+
+- `metadata.json`：会话标题、更新时间、消息数量等摘要。
+- `state.json`：完整 Agent state，用于恢复会话。
+- `messages.jsonl`：可读消息日志，便于直接查看历史。
+
+可用命令：
+
+```text
+/sessions
+/resume <session_id>
+/new
+/delete <session_id>
+/current
+```
+
+说明：
+
+- `.agent_sessions/` 保存完整会话历史，可手动恢复。
+- `.agent_memory.json` 保存长期记忆摘要和用户偏好。
+- 删除 `.agent_sessions/` 可以清空所有历史会话。
+
 ## 测试
 
 运行单元测试：
@@ -324,6 +357,20 @@ OPENAI_API_KEY=your-api-key
 ### 工具调用失败
 
 天气、定位和网页搜索依赖外部网络服务。如果网络不可用、服务限流或搜索页面结构变化，工具可能返回失败信息。
+
+### macOS 中文输入无法删除或移动光标
+
+CLI 使用 `prompt_toolkit` 读取输入，用来改善中文输入、删除、左右方向键和上下历史输入体验。输入历史默认写入：
+
+```text
+.agent_input_history
+```
+
+如果仍然出现中文编辑异常，请先确认终端 locale 是 UTF-8：
+
+```bash
+locale
+```
 
 ### 图片无法识别
 

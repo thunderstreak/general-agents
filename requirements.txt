@@ -6,3 +6,4 @@ requests
 pypdf
 python-docx
 openpyxl
+prompt_toolkit
