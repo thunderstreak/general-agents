@@ -1,0 +1,27 @@
+[
+  {
+    "input": "帮我查询今天天气",
+    "expected_intent": "weather",
+    "reason": "用户询问天气"
+  },
+  {
+    "input": "帮我搜索今天长沙天气",
+    "expected_intent": "weather",
+    "reason": "虽然用户提到搜索，但目标是天气数据"
+  },
+  {
+    "input": "我现在在哪里",
+    "expected_intent": "location",
+    "reason": "用户询问当前位置"
+  },
+  {
+    "input": "帮我搜索 LangGraph 是什么",
+    "expected_intent": "web_search",
+    "reason": "用户明确要求搜索网页资料"
+  },
+  {
+    "input": "你好",
+    "expected_intent": "chat",
+    "reason": "普通问候，不需要工具"
+  }
+]

@@ -8,7 +8,7 @@
 | 测试 | 未实现 | P0 | 当前主要靠手动命令验证 | 增加单元测试、工具 mock、意图分类测试、端到端测试 |
 | 日志与可观测性 | 未实现 | P0 | 仅有工具调用 `print` | 增加 structured logging、trace id、耗时、token、工具输入输出记录 |
 | 安全与权限 | 未实现 | P0 | 工具可直接调用外部接口 | 增加工具白名单、敏感操作确认、API key 保护、输入过滤 |
-| Prompt 管理 | 已实现但功能不全 | P1 | `agent_app/intent.py` 内置意图分类 prompt | 拆分 prompt 文件；增加版本管理、环境区分、分类测试样例 |
+| Prompt 管理 | 已完成 | P1 | 意图分类 prompt 已拆分到 `agent_app/prompts/`，并提供分类样例文件 | 后续可继续增加版本管理和环境区分 |
 | Intent Router 意图路由 | 已实现但功能不全 | P1 | `intent.py` 使用 LLM 分类为 `location/weather/web_search/chat/auto` | 增加置信度、测试集、多意图处理、失败回退策略 |
 | Tool 工具调用 | 已实现但功能不全 | P1 | 已有 `get_location`、`get_weather`、`web_search`，并按领域拆分到 `agent_app/tools/` | 增加工具元数据、统一超时重试、错误格式、权限控制、调用日志 |
 | State 状态管理 | 已实现但功能不全 | P1 | `AgentState` 当前只有 `messages` | 扩展结构化字段：`intent`、`retrieval_results`、`user_profile`、`tool_errors` |
@@ -43,9 +43,10 @@
 
 ### P1：稳定核心 Agent 能力
 
-1. Prompt 管理
-   - 将意图分类 prompt 拆到独立文件。
-   - 为 prompt 增加分类样例和预期输出。
+1. [x] Prompt 管理
+   - [x] 将意图分类 prompt 拆到独立文件。
+   - [x] 为 prompt 增加分类样例和预期输出。
+   - [ ] 增加 prompt 版本管理和环境区分。
 
 2. Intent Router 意图路由
    - 增加分类测试集。
