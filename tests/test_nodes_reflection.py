@@ -27,12 +27,98 @@ class ReflectionNodeTest(unittest.TestCase):
         state = base_state()
         state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
         state["tool_calls"] = [{"tool_name": "get_weather", "success": False, "result": "失败"}]
-        state["tool_errors"] = [{"tool_name": "get_weather", "success": False, "error": "网络失败"}]
+        state["tool_errors"] = [{"tool_name": "get_weather", "success": False, "error": "权限拒绝"}]
 
         result = reflection_node(state)
 
         self.assertEqual(result["reflection"]["status"], "failed")
         self.assertEqual(result["last_error"]["type"], "reflection_error")
+
+    def test_reflection_node_asks_user_for_missing_parameter(self):
+        """参数缺失时进入追问响应。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="天气查询失败：用户没有提供城市，请提供城市名后再查询。", tool_call_id="tool_1")]
+        state["tool_calls"] = [
+            {
+                "tool_name": "get_weather",
+                "success": True,
+                "result": "天气查询失败：用户没有提供城市，请提供城市名后再查询。",
+            }
+        ]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "ask_user")
+        self.assertEqual(result["reflection"]["next_action"], "response")
+        self.assertEqual(result["reflection"]["missing_info"], "城市")
+        self.assertEqual(result["last_error"], {})
+
+    def test_reflection_node_retries_temporary_tool_error(self):
+        """临时错误未超限时触发重试。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
+        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "retry")
+        self.assertEqual(result["reflection"]["next_action"], "tools")
+        self.assertEqual(result["reflection"]["retry_tool_name"], "fetch_url")
+        self.assertEqual(result["reflection"]["retry_count"], 1)
+        self.assertEqual(result["last_error"], {})
+
+    def test_reflection_node_fails_after_retry_limit(self):
+        """临时错误达到重试上限后失败。"""
+        state = base_state()
+        state["reflection"] = {"retry_count": 1}
+        state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
+        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "failed")
+        self.assertEqual(result["reflection"]["stop_reason"], "retry_limit_exceeded")
+        self.assertEqual(result["last_error"]["type"], "reflection_error")
+
+    def test_reflection_node_marks_empty_result_insufficient(self):
+        """空工具结果进入 insufficient。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "web_search", "success": True, "result": ""}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "insufficient")
+        self.assertEqual(result["reflection"]["next_action"], "response")
+
+    def test_reflection_node_marks_max_steps_exceeded(self):
+        """达到最大步骤时停止。"""
+        state = base_state()
+        state["step_count"] = state["max_steps"]
+        state["messages"] = [ToolMessage(content="工具结果", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "get_weather", "success": True, "result": "晴"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "failed")
+        self.assertEqual(result["reflection"]["stop_reason"], "max_steps_exceeded")
+
+    def test_reflection_node_uses_latest_tool_batch(self):
+        """重试成功后不被历史失败记录污染。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="最新工具结果", tool_call_id="tool_2")]
+        state["tool_calls"] = [
+            {"tool_name": "fetch_url", "success": False, "result": "timeout"},
+            {"tool_name": "fetch_url", "success": True, "result": "最新工具结果"},
+        ]
+        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "passed")
+        self.assertEqual(result["reflection"]["next_action"], "agent")
 
 
 if __name__ == "__main__":

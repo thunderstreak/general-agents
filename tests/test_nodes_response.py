@@ -35,6 +35,24 @@ class ResponseNodeTest(unittest.TestCase):
 
         self.assertEqual(response["errors"][0]["message"], "工具失败")
 
+    def test_response_node_renders_reflection_question(self):
+        """reflection 追问输出面向用户的问题。"""
+        state = base_state()
+        state["reflection"] = {
+            "status": "ask_user",
+            "reason": "请提供城市名",
+            "next_action": "response",
+            "missing_info": "城市",
+            "retry_count": 0,
+        }
+        state["tool_errors"] = [{"message": "请提供城市名"}]
+
+        result = response_node(state)
+
+        self.assertEqual(result["final_response"]["content"], "我还需要你补充城市后才能继续。")
+        self.assertEqual(result["final_response"]["status"], "success")
+        self.assertEqual(result["final_response"]["errors"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

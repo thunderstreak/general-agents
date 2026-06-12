@@ -4,7 +4,7 @@ import unittest
 
 from langchain_core.messages import AIMessage, ToolCall
 
-from agent_app.graph import after_tool_router, router
+from agent_app.graph import after_reflection_router, after_tool_router, router
 from tests.helpers import base_state
 
 
@@ -31,6 +31,21 @@ class GraphRouterTest(unittest.TestCase):
     def test_after_tool_router_goes_to_reflection(self):
         """工具执行后进入 reflection。"""
         self.assertEqual(after_tool_router(base_state()), "reflection")
+
+    def test_after_reflection_router_uses_next_action(self):
+        """reflection 可路由到多个下一步。"""
+        for action in ("agent", "tools", "planning", "response", "error"):
+            state = base_state()
+            state["reflection"] = {"next_action": action}
+            self.assertEqual(after_reflection_router(state), action)
+
+    def test_after_reflection_router_prefers_last_error(self):
+        """已有错误时进入 error。"""
+        state = base_state()
+        state["reflection"] = {"next_action": "tools"}
+        state["last_error"] = {"message": "失败"}
+
+        self.assertEqual(after_reflection_router(state), "error")
 
 
 if __name__ == "__main__":

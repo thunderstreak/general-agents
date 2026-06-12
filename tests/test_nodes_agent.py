@@ -64,6 +64,7 @@ class AgentNodeTest(unittest.TestCase):
 
         emit_progress.assert_not_called()
         self.assertEqual(result["messages"][0].tool_calls[0]["name"], "get_weather")
+        self.assertEqual(result["last_tool_request"]["tool_calls"][0]["name"], "get_weather")
 
     def test_agent_node_chat_plan_invokes_chat_model(self):
         """chat plan 调用普通聊天模型。"""

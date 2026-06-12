@@ -23,5 +23,26 @@ def response_node(state: AgentState):
     """统一输出结构节点。"""
     start_time = time.perf_counter()
     emit_progress("整理响应...", node="response")
+    reflection = state.get("reflection") or {}
+    if reflection.get("next_action") == "response" and reflection.get("status") in {"ask_user", "insufficient"}:
+        message = AIMessage(content=_reflection_response_text(reflection))
+        response_state = {**state, "messages": [message], "last_error": {}, "tool_errors": []}
+        return {
+            "messages": [message],
+            "final_response": build_response(response_state),
+            "node_runs": [node_run("response", start_time)],
+        }
     response = build_response(state)
     return {"final_response": response, "node_runs": [node_run("response", start_time)]}
+
+
+def _reflection_response_text(reflection: dict) -> str:
+    """把反思决策转换为面向用户的追问或说明。"""
+    status = reflection.get("status")
+    missing_info = reflection.get("missing_info") or "必要信息"
+    reason = reflection.get("reason") or ""
+    if status == "ask_user":
+        return f"我还需要你补充{missing_info}后才能继续。"
+    if status == "insufficient":
+        return f"工具没有返回足够可用的信息，暂时无法完成这次请求。{reason}".strip()
+    return reason or "暂时无法完成这次请求。"

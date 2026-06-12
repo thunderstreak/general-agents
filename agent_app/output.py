@@ -32,6 +32,7 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
         "metadata": {
             "step_count": state.get("step_count", 0),
             "max_steps": state.get("max_steps", 0),
+            "reflection": state.get("reflection", {}),
         },
     }
 
@@ -139,6 +140,18 @@ def _render_debug_lines(response: dict[str, Any]) -> list[str]:
                 f"duration_ms={node.get('duration_ms')} "
                 f"error={node.get('error', '')}"
             )
+
+    reflection = (response.get("metadata") or {}).get("reflection") or {}
+    if reflection:
+        lines.append("- reflection:")
+        lines.append(
+            f"  - status={reflection.get('status', '')} "
+            f"next_action={reflection.get('next_action', '')} "
+            f"retry_count={reflection.get('retry_count', 0)} "
+            f"stop_reason={reflection.get('stop_reason', '')}"
+        )
+        if reflection.get("reason"):
+            lines.append(f"  - reason={reflection.get('reason')}")
 
     errors = response.get("errors", [])
     if errors:

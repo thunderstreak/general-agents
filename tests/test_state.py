@@ -21,6 +21,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["messages"], [])
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["reflection"], {})
+        self.assertEqual(state["last_tool_request"], {})
         self.assertEqual(state["long_term_memory"]["summary"], "摘要")
         self.assertIn("node_runs", state)
 
@@ -31,6 +32,9 @@ class AgentStateTest(unittest.TestCase):
             long_term_memory={"summary": "保留"},
             plan={"mode": "tool"},
             reflection={"status": "passed"},
+            last_tool_request={"tool_calls": [{"name": "get_weather"}]},
+            tool_calls=[{"tool_name": "get_weather"}],
+            tool_errors=[{"error": "old"}],
             retrieval_results=[{"source": "old"}],
             final_response={"content": "old"},
             approved_tool_call_ids=["tool_1"],
@@ -43,6 +47,9 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(result["approved_tool_call_ids"], ["tool_1"])
         self.assertEqual(result["plan"], {})
         self.assertEqual(result["reflection"], {})
+        self.assertEqual(result["last_tool_request"], {})
+        self.assertEqual(result["tool_calls"], [])
+        self.assertEqual(result["tool_errors"], [])
         self.assertEqual(result["retrieval_results"], [])
         self.assertEqual(result["final_response"], {})
         self.assertTrue(result["trace_id"])

@@ -43,10 +43,14 @@ def after_tool_router(state: AgentState) -> Literal["reflection", "error"]:
     return "reflection"
 
 
-def after_reflection_router(state: AgentState) -> Literal["agent", "error"]:
+def after_reflection_router(state: AgentState) -> Literal["agent", "tools", "planning", "response", "error"]:
     """反思核对后路由。"""
     if state.get("last_error"):
         return "error"
+    reflection = state.get("reflection") or {}
+    next_action = reflection.get("next_action") or "agent"
+    if next_action in {"agent", "tools", "planning", "response", "error"}:
+        return next_action
     return "agent"
 
 
@@ -74,7 +78,11 @@ def build_graph():
     workflow.add_edge("planning", "agent")
     workflow.add_conditional_edges("agent", router, {"confirm": "confirm", "tools": "tools", "error": "error", "memory": "memory"})
     workflow.add_conditional_edges("tools", after_tool_router, {"reflection": "reflection", "error": "error"})
-    workflow.add_conditional_edges("reflection", after_reflection_router, {"agent": "agent", "error": "error"})
+    workflow.add_conditional_edges(
+        "reflection",
+        after_reflection_router,
+        {"agent": "agent", "tools": "tools", "planning": "planning", "response": "response", "error": "error"},
+    )
     workflow.add_conditional_edges("memory", after_memory_router, {"response": "response", "error": "error"})
     workflow.add_edge("confirm", "response")
     workflow.add_edge("error", "response")

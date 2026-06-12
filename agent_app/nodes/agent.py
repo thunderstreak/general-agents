@@ -60,6 +60,8 @@ def agent_node(state: AgentState):
                 response = get_llm_with_tools().invoke(model_messages)
 
         state_update = {**step_update, "messages": [response], "node_runs": [node_run("agent", start_time)]}
+        if getattr(response, "tool_calls", None):
+            state_update["last_tool_request"] = {"tool_calls": response.tool_calls}
         return state_update
     except Exception as exc:
         message = f"Agent 节点执行失败：{exc}"

@@ -75,6 +75,24 @@ class OutputTest(unittest.TestCase):
         self.assertIn("web_search", text)
         self.assertIn("agent", text)
 
+    def test_render_cli_debug_includes_reflection(self):
+        """CLI debug 渲染包含 reflection 摘要。"""
+        state = _state("回答内容")
+        state["reflection"] = {
+            "status": "retry",
+            "reason": "timeout",
+            "next_action": "tools",
+            "retry_count": 1,
+            "stop_reason": "",
+        }
+
+        text = render_cli_response(build_response(state), debug=True)
+
+        self.assertIn("- reflection:", text)
+        self.assertIn("status=retry", text)
+        self.assertIn("next_action=tools", text)
+        self.assertIn("reason=timeout", text)
+
 
 if __name__ == "__main__":
     unittest.main()
