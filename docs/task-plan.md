@@ -9,7 +9,7 @@
 | 日志与可观测性 | 未实现 | P0 | 仅有工具调用 `print` | 增加 structured logging、trace id、耗时、token、工具输入输出记录 |
 | 安全与权限 | 未实现 | P0 | 工具可直接调用外部接口 | 增加工具白名单、敏感操作确认、API key 保护、输入过滤 |
 | Prompt 管理 | 已完成 | P1 | 意图分类 prompt 已拆分到 `agent_app/prompts/`，并提供分类样例文件 | 后续可继续增加版本管理和环境区分 |
-| Intent Router 意图路由 | 已实现但功能不全 | P1 | `intent.py` 使用 LLM 分类为 `location/weather/web_search/chat/auto` | 增加置信度、测试集、多意图处理、失败回退策略 |
+| Intent Router 意图路由 | 已完成 | P1 | `intent.py` 使用 LLM 分类为 `location/weather/web_search/chat/auto`，支持置信度、低置信度回退和样例检查脚本 | 后续可继续增强多意图处理 |
 | Tool 工具调用 | 已实现但功能不全 | P1 | 已有 `get_location`、`get_weather`、`web_search`，并按领域拆分到 `agent_app/tools/` | 增加工具元数据、统一超时重试、错误格式、权限控制、调用日志 |
 | State 状态管理 | 已实现但功能不全 | P1 | `AgentState` 当前只有 `messages` | 扩展结构化字段：`intent`、`retrieval_results`、`user_profile`、`tool_errors` |
 | LLM 大模型 | 已实现但功能不全 | P1 | 使用 `ChatOpenAI` 接入第三方 `base_url`，支持聊天、工具选择、意图分类 | 补充模型 fallback、超时、token/cost 统计 |
@@ -48,9 +48,10 @@
    - [x] 为 prompt 增加分类样例和预期输出。
    - [ ] 增加 prompt 版本管理和环境区分。
 
-2. Intent Router 意图路由
-   - 增加分类测试集。
-   - 增加分类失败或低置信度时的 fallback 策略。
+2. [x] Intent Router 意图路由
+   - [x] 增加分类测试集。
+   - [x] 增加分类失败或低置信度时的 fallback 策略。
+   - [ ] 增强多意图处理。
 
 3. Tool 工具调用
    - 增加工具元数据和统一错误格式。
