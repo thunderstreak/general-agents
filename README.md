@@ -1,12 +1,13 @@
 # LangGraph Agent
 
-这是一个基于 LangGraph 和 LangChain 的命令行 Agent 项目。项目通过 CLI 接收用户输入，使用 OpenAI-compatible 模型完成对话、工具选择、工具调用、长期记忆写入和统一响应输出。
+这是一个基于 LangGraph 和 LangChain 的命令行 Agent 项目。项目通过 CLI 接收用户输入，使用 OpenAI-compatible 模型完成对话、规划决策、工具调用、长期记忆写入和统一响应输出。
 
 ## 功能概览
 
 - 多轮命令行对话。
 - 基于 LangGraph 的节点编排。
 - 支持 OpenAI-compatible API，包括官方 OpenAI 或第三方兼容服务。
+- 支持轻量 Planning（规划决策），普通对话默认直接回答；明确工具意图会进入可调用工具的 agent 模式。
 - 支持天气、IP 定位、网页搜索等工具调用。
 - 支持本地长期记忆，默认写入 `.agent_memory.json`。
 - 支持通过 `@文件路径` 读取文本、图片、PDF、DOCX、XLSX、CSV、JSON 等文件输入。
@@ -198,11 +199,15 @@ CLI 解析文本和 @文件路径
   ↓
 LangGraph: retrieval 节点
   ↓
+LangGraph: planning 节点
+  ↓
 LangGraph: agent 节点
   ↓
 根据路由进入 tools / confirm / memory / error
   ↓
-工具执行后回到 agent 总结结果
+工具执行后进入 reflection 核对结果
+  ↓
+核对通过后回到 agent 总结结果
   ↓
 memory 节点写入长期记忆
   ↓
@@ -214,9 +219,11 @@ CLI 渲染输出
 ### LangGraph 节点说明
 
 - `retrieval`：RAG 检索预留节点。命中“知识库、文档、检索”等关键词时写入占位检索结果。
-- `agent`：调用模型生成回复，或通过 `tool_selector` 转换为工具调用。
+- `planning`：使用本地工具意图 gate 生成结构化 `plan`；普通对话生成 `chat` plan，明确工具/实时/RAG/文件/记忆意图生成 `tool_agent` plan。
+- `agent`：读取 `plan` 决定普通聊天，或使用绑定工具的模型生成原生 `tool_calls`。
 - `confirm`：处理需要人工确认的工具调用。当前注册工具默认不需要确认。
 - `tools`：通过统一工具运行时执行工具，记录耗时、重试次数和错误。
+- `reflection`：轻量核对工具结果是否成功，成功后回到 `agent` 总结，失败时进入错误响应。
 - `memory`：在最终回复后更新长期记忆。
 - `error`：构造统一错误消息。
 - `response`：输出统一结构，供 CLI 渲染。

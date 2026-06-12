@@ -20,7 +20,7 @@ from agent_app.orchestrator import (
     success_node_run,
 )
 from agent_app.output import build_response
-from agent_app.tool_selector import select_tool
+from agent_app.tool_selector import ToolSelection, should_enter_tool_mode
 from agent_app.tools import tool_metadata_by_name, tools, tools_by_name
 from agent_app.tools.runtime import run_tool
 
@@ -28,6 +28,8 @@ from agent_app.tools.runtime import run_tool
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]  # LangGraph 会自动追加消息
     tool_selection: dict
+    plan: dict
+    reflection: dict
     tool_calls: Annotated[list, operator.add]
     tool_errors: Annotated[list, operator.add]
     retrieval_results: Annotated[list, operator.add]
@@ -130,6 +132,29 @@ def retrieval_node(state: AgentState):
     }
 
 
+def planning_node(state: AgentState):
+    """生成单轮结构化执行计划。"""
+    start_time = time.perf_counter()
+    messages = state["messages"]
+    if messages and hasattr(messages[-1], "tool_calls") and messages[-1].tool_calls:
+        return {
+            "plan": _auto_plan("已有待执行工具调用，跳过规划"),
+            "node_runs": [_node_run("planning", start_time)],
+        }
+
+    latest_human_message = _latest_human_message(state["messages"])
+    user_text = _message_text(latest_human_message)
+
+    selection = _planning_selection(user_text, bool(latest_human_message))
+
+    plan = _selection_to_plan(selection)
+    return {
+        "tool_selection": selection.to_dict(),
+        "plan": plan,
+        "node_runs": [_node_run("planning", start_time)],
+    }
+
+
 def agent_node(state: AgentState):
     """调用模型，生成回复或工具调用。"""
     start_time = time.perf_counter()
@@ -146,7 +171,6 @@ def agent_node(state: AgentState):
         model_messages = _with_context(messages, memory_state, state.get("retrieval_results", []))
 
         if isinstance(messages[-1], ToolMessage):
-            _emit_progress("思考中...", node="agent")
             response = invoke_with_fallback(
                 [
                     SystemMessage(
@@ -160,21 +184,20 @@ def agent_node(state: AgentState):
                 ]
             )
         else:
-            latest_human_message = _latest_human_message(messages)
-            selection = select_tool(_message_text(latest_human_message)) if latest_human_message else None
+            step = _current_plan_step(state.get("plan") or {})
+            action = step.get("action", "auto")
 
-            if selection and selection.action == "tool":
-                response = _tool_selection_to_message(selection.tool_name, selection.args)
-            elif selection and selection.action == "chat":
-                _emit_progress("思考中...", node="agent")
+            if action == "tool" and step.get("tool_name"):
+                response = _tool_selection_to_message(step["tool_name"], step.get("args") or {})
+            elif action == "tool_agent":
+                _emit_progress("需要外部信息，准备调用工具...", node="agent")
+                response = llm_with_tools.invoke(model_messages)
+            elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
-                _emit_progress("思考中...", node="agent")
                 response = llm_with_tools.invoke(model_messages)
 
         state_update = {**step_update, "messages": [response], "node_runs": [_node_run("agent", start_time)]}
-        if "selection" in locals() and selection:
-            state_update["tool_selection"] = selection.to_dict()
         return state_update
     except Exception as exc:
         message = f"Agent 节点执行失败：{exc}"
@@ -236,6 +259,34 @@ def tool_node(state: AgentState):
     if tool_error_records:
         state_update["last_error"] = error_state(_join_tool_errors(tool_error_records), "tool_error", "tools")
     return state_update
+
+
+def reflection_node(state: AgentState):
+    """轻量核对工具结果，决定是否进入总结或错误响应。"""
+    start_time = time.perf_counter()
+    _emit_progress("核对工具结果...", node="reflection")
+    tool_errors = state.get("tool_errors", [])
+    tool_calls = state.get("tool_calls", [])
+    if tool_errors:
+        message = _join_tool_errors(tool_errors)
+        return {
+            "reflection": {"status": "failed", "reason": message, "next_action": "error"},
+            "last_error": error_state(message, "reflection_error", "reflection"),
+            "node_runs": [_node_run("reflection", start_time, success=False, error=message)],
+        }
+
+    if not tool_calls:
+        message = "没有可核对的工具结果。"
+        return {
+            "reflection": {"status": "failed", "reason": message, "next_action": "error"},
+            "last_error": error_state(message, "reflection_error", "reflection"),
+            "node_runs": [_node_run("reflection", start_time, success=False, error=message)],
+        }
+
+    return {
+        "reflection": {"status": "passed", "reason": "工具调用成功，进入结果总结。", "next_action": "agent"},
+        "node_runs": [_node_run("reflection", start_time)],
+    }
 
 
 def memory_node(state: AgentState):
@@ -312,8 +363,15 @@ def router(state: AgentState) -> Literal["confirm", "tools", "error", "memory"]:
     return "memory"
 
 
-def after_tool_router(state: AgentState) -> Literal["agent", "error"]:
+def after_tool_router(state: AgentState) -> Literal["reflection", "error"]:
     """工具执行后路由。"""
+    if state.get("last_error", {}).get("type") == "max_steps_exceeded":
+        return "error"
+    return "reflection"
+
+
+def after_reflection_router(state: AgentState) -> Literal["agent", "error"]:
+    """反思核对后路由。"""
     if state.get("last_error"):
         return "error"
     return "agent"
@@ -331,6 +389,69 @@ def _tool_selection_to_message(tool_name: str, tool_args: dict):
     tool_call_id = f"selected_{tool_name}"
     tool_call = ToolCall(name=tool_name, args=tool_args, id=tool_call_id)
     return AIMessage(content="", tool_calls=[tool_call])
+
+
+def _planning_selection(user_text: str, has_user_message: bool) -> ToolSelection:
+    """根据本地 gate 生成规划选择。"""
+    if not has_user_message:
+        return ToolSelection(action="auto", reason="没有找到用户消息")
+    if should_enter_tool_mode(user_text):
+        return ToolSelection(action="auto", confidence=1.0, reason="本地判断：进入工具 agent 模式")
+    return ToolSelection(action="chat", confidence=1.0, reason="本地判断：普通对话")
+
+
+def _selection_to_plan(selection: ToolSelection) -> dict:
+    """把工具选择结果转换为统一 plan 结构。"""
+    action = selection.action if selection.action in {"tool", "chat", "auto"} else "auto"
+    if action == "auto" and selection.reason == "本地判断：进入工具 agent 模式":
+        action = "tool_agent"
+    step = {
+        "step_id": "step_1",
+        "action": action,
+        "tool_name": selection.tool_name if action == "tool" else "",
+        "args": selection.args if action == "tool" else {},
+        "reason": selection.reason,
+    }
+    return {
+        "intent": _plan_intent(selection),
+        "mode": action,
+        "plan_steps": [step],
+        "current_step": 0,
+        "decision_reason": selection.reason,
+        "status": "ready",
+    }
+
+
+def _auto_plan(reason: str) -> dict:
+    """生成自动回退计划。"""
+    return _selection_to_plan(ToolSelection(action="auto", confidence=0.0, reason=reason))
+
+
+def _plan_intent(selection: ToolSelection) -> str:
+    """根据选择器结果生成轻量意图标签。"""
+    if selection.action == "tool" and selection.tool_name:
+        return f"use_tool:{selection.tool_name}"
+    if selection.action == "auto" and selection.reason == "本地判断：进入工具 agent 模式":
+        return "tool_agent"
+    if selection.action == "chat":
+        return "chat"
+    return "auto"
+
+
+def _current_plan_step(plan: dict) -> dict:
+    """读取当前 plan step，缺失时回退到 auto。"""
+    steps = plan.get("plan_steps") if isinstance(plan, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return {"step_id": "step_1", "action": "auto", "tool_name": "", "args": {}, "reason": "缺少计划，回退自动执行"}
+
+    current_step = plan.get("current_step", 0)
+    if not isinstance(current_step, int) or current_step < 0 or current_step >= len(steps):
+        current_step = 0
+
+    step = steps[current_step]
+    if not isinstance(step, dict):
+        return {"step_id": "step_1", "action": "auto", "tool_name": "", "args": {}, "reason": "计划步骤格式错误，回退自动执行"}
+    return step
 
 
 def _with_context(messages: list, memory_state: dict, retrieval_results: list):
@@ -362,16 +483,20 @@ def build_graph():
     """构建并编译 LangGraph。"""
     workflow = StateGraph(AgentState)
     workflow.add_node("retrieval", retrieval_node)
+    workflow.add_node("planning", planning_node)
     workflow.add_node("agent", agent_node)
     workflow.add_node("confirm", confirmation_node)
     workflow.add_node("tools", tool_node)
+    workflow.add_node("reflection", reflection_node)
     workflow.add_node("memory", memory_node)
     workflow.add_node("error", error_node)
     workflow.add_node("response", response_node)
     workflow.set_entry_point("retrieval")
-    workflow.add_edge("retrieval", "agent")
+    workflow.add_edge("retrieval", "planning")
+    workflow.add_edge("planning", "agent")
     workflow.add_conditional_edges("agent", router, {"confirm": "confirm", "tools": "tools", "error": "error", "memory": "memory"})
-    workflow.add_conditional_edges("tools", after_tool_router, {"agent": "agent", "error": "error"})
+    workflow.add_conditional_edges("tools", after_tool_router, {"reflection": "reflection", "error": "error"})
+    workflow.add_conditional_edges("reflection", after_reflection_router, {"agent": "agent", "error": "error"})
     workflow.add_conditional_edges("memory", after_memory_router, {"response": "response", "error": "error"})
     workflow.add_edge("confirm", "response")
     workflow.add_edge("error", "response")

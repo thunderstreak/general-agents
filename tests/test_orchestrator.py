@@ -3,19 +3,19 @@
 import unittest
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolCall
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
-from agent_app.graph import agent_node, response_node, retrieval_node, router
+from agent_app.graph import after_tool_router, planning_node, reflection_node, agent_node, response_node, retrieval_node, router
 from agent_app.orchestrator import should_retrieve
 from agent_app.output import build_response
-from agent_app.tool_selector import ToolSelection
-
 
 def _base_state():
     """构造基础 AgentState。"""
     return {
         "messages": [HumanMessage(content="你好")],
         "tool_selection": {},
+        "plan": {},
+        "reflection": {},
         "tool_calls": [],
         "tool_errors": [],
         "retrieval_results": [],
@@ -90,13 +90,171 @@ class OrchestratorTest(unittest.TestCase):
         """首轮选择工具时不输出思考进度，直接进入工具进度。"""
         state = _base_state()
         state["messages"] = [HumanMessage(content="今天天气 如何")]
-        selection = ToolSelection(action="tool", tool_name="get_weather", args={"city": ""}, confidence=1.0)
+        state["plan"] = {
+            "intent": "use_tool:get_weather",
+            "mode": "tool",
+            "plan_steps": [
+                {
+                    "step_id": "step_1",
+                    "action": "tool",
+                    "tool_name": "get_weather",
+                    "args": {"city": ""},
+                    "reason": "需要查询天气",
+                }
+            ],
+            "current_step": 0,
+            "decision_reason": "需要查询天气",
+            "status": "ready",
+        }
 
-        with patch("agent_app.graph.select_tool", return_value=selection), patch("agent_app.graph._emit_progress") as emit_progress:
+        with patch("agent_app.graph._emit_progress") as emit_progress:
             result = agent_node(state)
 
         emit_progress.assert_not_called()
         self.assertEqual(result["messages"][0].tool_calls[0]["name"], "get_weather")
+
+    def test_planning_node_builds_tool_agent_plan(self):
+        """planning_node 对明确工具意图生成 tool_agent plan。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="今天天气 如何")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["tool_selection"]["action"], "auto")
+        self.assertEqual(result["plan"]["mode"], "tool_agent")
+        self.assertEqual(result["plan"]["plan_steps"][0]["action"], "tool_agent")
+
+    def test_planning_node_builds_chat_plan(self):
+        """planning_node 将普通对话转换为 chat plan。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="讲个短笑话")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "chat")
+        self.assertEqual(result["plan"]["plan_steps"][0]["action"], "chat")
+
+    def test_planning_node_uses_quick_chat_without_select_tool(self):
+        """明显普通对话跳过工具选择模型。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="你好")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["tool_selection"]["action"], "chat")
+        self.assertEqual(result["plan"]["mode"], "chat")
+        self.assertEqual(result["plan"]["decision_reason"], "本地判断：普通对话")
+
+    def test_planning_node_market_question_enters_tool_agent(self):
+        """实时市场问题进入 tool_agent plan。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="我想看今天的股票市场行情")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "tool_agent")
+
+    def test_planning_node_multilingual_chat_skips_tool_selector(self):
+        """多语言普通问候直接 chat。"""
+        state = _base_state()
+        state["messages"] = [HumanMessage(content="こんにちは")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "chat")
+
+    def test_agent_node_chat_plan_invokes_chat_model(self):
+        """agent_node 对 chat plan 调用普通聊天模型。"""
+        state = _base_state()
+        state["plan"] = {
+            "intent": "chat",
+            "mode": "chat",
+            "plan_steps": [{"step_id": "step_1", "action": "chat", "tool_name": "", "args": {}, "reason": "普通对话"}],
+            "current_step": 0,
+            "decision_reason": "普通对话",
+            "status": "ready",
+        }
+
+        with patch("agent_app.graph.invoke_with_fallback", return_value=AIMessage(content="你好")) as invoke:
+            result = agent_node(state)
+
+        invoke.assert_called_once()
+        self.assertEqual(result["messages"][0].content, "你好")
+
+    def test_agent_node_chat_plan_does_not_emit_thinking_progress(self):
+        """普通 chat plan 不输出思考进度。"""
+        state = _base_state()
+        state["plan"] = {
+            "intent": "chat",
+            "mode": "chat",
+            "plan_steps": [{"step_id": "step_1", "action": "chat", "tool_name": "", "args": {}, "reason": "普通对话"}],
+            "current_step": 0,
+            "decision_reason": "普通对话",
+            "status": "ready",
+        }
+
+        with patch("agent_app.graph.invoke_with_fallback", return_value=AIMessage(content="你好")), patch(
+            "agent_app.graph._emit_progress"
+        ) as emit_progress:
+            agent_node(state)
+
+        emit_progress.assert_not_called()
+
+    def test_agent_node_tool_agent_plan_invokes_llm_with_tools(self):
+        """agent_node 对 tool_agent plan 调用绑定工具模型。"""
+        class FakeToolModel:
+            def __init__(self):
+                self.called = False
+
+            def invoke(self, messages):
+                self.called = True
+                return AIMessage(content="")
+
+        state = _base_state()
+        state["plan"] = {
+            "intent": "tool_agent",
+            "mode": "tool_agent",
+            "plan_steps": [{"step_id": "step_1", "action": "tool_agent", "tool_name": "", "args": {}, "reason": "需要工具"}],
+            "current_step": 0,
+            "decision_reason": "需要工具",
+            "status": "ready",
+        }
+        fake_model = FakeToolModel()
+
+        with patch("agent_app.graph.llm_with_tools", fake_model):
+            result = agent_node(state)
+
+        self.assertTrue(fake_model.called)
+        self.assertEqual(result["messages"][0].content, "")
+
+    def test_reflection_node_passes_successful_tool_results(self):
+        """成功工具结果通过 reflection。"""
+        state = _base_state()
+        state["messages"] = [ToolMessage(content="工具结果", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "get_weather", "success": True, "result": "晴"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "passed")
+        self.assertEqual(result["reflection"]["next_action"], "agent")
+
+    def test_reflection_node_fails_tool_errors(self):
+        """失败工具结果由 reflection 转为错误。"""
+        state = _base_state()
+        state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "get_weather", "success": False, "result": "失败"}]
+        state["tool_errors"] = [{"tool_name": "get_weather", "success": False, "error": "网络失败"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "failed")
+        self.assertEqual(result["last_error"]["type"], "reflection_error")
+
+    def test_after_tool_router_goes_to_reflection(self):
+        """工具执行后进入 reflection。"""
+        state = _base_state()
+
+        self.assertEqual(after_tool_router(state), "reflection")
 
     def test_retrieval_placeholder(self):
         """RAG 预留节点在命中关键词时写入检索结果。"""

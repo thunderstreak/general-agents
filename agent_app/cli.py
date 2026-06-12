@@ -79,6 +79,8 @@ def _new_state() -> dict:
     return {
         "messages": [],
         "tool_selection": {},
+        "plan": {},
+        "reflection": {},
         "tool_calls": [],
         "tool_errors": [],
         "retrieval_results": [],
@@ -164,6 +166,8 @@ def _reset_turn_state(state: dict) -> dict:
     state["step_count"] = 0
     state["max_steps"] = ORCHESTRATOR_MAX_STEPS
     state["last_error"] = {}
+    state["plan"] = {}
+    state["reflection"] = {}
     state["retrieval_results"] = []
     state["final_response"] = {}
     state["trace_id"] = new_trace_id()
@@ -347,19 +351,16 @@ def _custom_progress_message(data) -> str:
 
 
 def _update_progress_message(data) -> str:
-    """根据节点 update 生成兜底进度文本。"""
+    """根据必要状态类节点 update 生成兜底进度文本。"""
     if not isinstance(data, dict) or len(data) != 1:
         return ""
 
     node_name = next(iter(data))
     labels = {
-        "retrieval": "检索中...",
-        "agent": "思考中...",
         "confirm": "等待人工确认...",
         "tools": "执行工具中...",
-        "memory": "更新记忆...",
+        "reflection": "核对工具结果...",
         "error": "生成错误响应...",
-        "response": "整理响应...",
     }
     return labels.get(node_name, "")
 
@@ -383,6 +384,8 @@ def _print_debug_tail(state: dict) -> None:
     response = state.get("final_response") or build_response(state)
     debug_text = render_cli_response(response, debug=True)
     lines = debug_text.splitlines()
-    if len(lines) <= 1:
+    try:
+        debug_start = lines.index("Debug:")
+    except ValueError:
         return
-    print("\n" + "\n".join(lines[1:]))
+    print("\n" + "\n".join(lines[debug_start:]))

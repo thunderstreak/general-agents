@@ -13,6 +13,74 @@ from agent_app.tools import tool_metadata
 
 SelectorAction = Literal["tool", "chat", "auto"]
 LOW_CONFIDENCE_THRESHOLD = 0.7
+TOOL_MODE_KEYWORDS = (
+    "天气",
+    "气温",
+    "下雨",
+    "weather",
+    "forecast",
+    "搜索",
+    "查一下",
+    "查询",
+    "最新",
+    "新闻",
+    "search",
+    "google",
+    "bing",
+    "联网",
+    "我在哪",
+    "当前位置",
+    "定位",
+    "location",
+    "ip",
+    "知识库",
+    "文档",
+    "资料库",
+    "内部资料",
+    "根据资料",
+    "检索",
+    "[文件:",
+    "[文件内容]",
+    "[图片文件]",
+    "[文件解析失败]",
+    "记住",
+    "请记住",
+    "以后你要",
+    "我的偏好",
+)
+REALTIME_KEYWORDS = ("今天", "现在", "当前", "实时", "最新", "today", "now", "current", "recent")
+EXTERNAL_INFO_KEYWORDS = (
+    "股票",
+    "股市",
+    "行情",
+    "市场",
+    "汇率",
+    "价格",
+    "走势",
+    "新闻",
+    "政策",
+    "法规",
+    "公告",
+    "release",
+)
+QUICK_CHAT_EXACT_MATCHES = {
+    "你好",
+    "您好",
+    "嗨",
+    "哈喽",
+    "hello",
+    "hi",
+    "hey",
+    "nihao",
+    "ni hao",
+    "谢谢",
+    "多谢",
+    "感谢",
+    "再见",
+    "拜拜",
+    "你是谁",
+    "你能做什么",
+}
 
 
 @dataclass
@@ -31,6 +99,32 @@ class ToolSelection:
 
 
 selector_llm = get_tool_selector_model()
+
+
+def should_enter_tool_mode(user_text: str) -> bool:
+    """判断是否需要进入可调用工具的 agent 模式。"""
+    normalized = _normalize_quick_chat_text(user_text)
+    if not normalized:
+        return False
+
+    if any(keyword in normalized for keyword in TOOL_MODE_KEYWORDS):
+        return True
+
+    return any(keyword in normalized for keyword in REALTIME_KEYWORDS) and any(
+        keyword in normalized for keyword in EXTERNAL_INFO_KEYWORDS
+    )
+
+
+def quick_chat_selection(user_text: str) -> ToolSelection | None:
+    """对明显普通对话做本地快速判断，避免额外调用工具选择模型。"""
+    normalized = _normalize_quick_chat_text(user_text)
+    if not normalized:
+        return None
+
+    if normalized in QUICK_CHAT_EXACT_MATCHES:
+        return ToolSelection(action="chat", confidence=1.0, reason="本地快速判断：普通对话")
+
+    return None
 
 
 def select_tool(user_text: str) -> ToolSelection:
@@ -85,6 +179,12 @@ def _format_tool_descriptions() -> str:
             f"  requires_confirmation: {metadata.requires_confirmation}"
         )
     return "\n".join(lines)
+
+
+def _normalize_quick_chat_text(text: str) -> str:
+    """标准化短文本，供快速普通对话判断使用。"""
+    normalized = str(text or "").strip().lower()
+    return " ".join(normalized.strip(" \t\r\n,.!?。！？~～，、").split())
 
 
 def _parse_confidence(value) -> float:

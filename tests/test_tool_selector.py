@@ -1,0 +1,70 @@
+"""工具选择器测试。"""
+
+import unittest
+
+from agent_app.tool_selector import quick_chat_selection, should_enter_tool_mode
+
+
+class ToolSelectorTest(unittest.TestCase):
+    """工具选择器本地快速判断测试。"""
+
+    def test_quick_chat_selection_matches_greeting(self):
+        """明显问候直接返回 chat。"""
+        selection = quick_chat_selection("你好")
+
+        self.assertIsNotNone(selection)
+        self.assertEqual(selection.action, "chat")
+
+    def test_quick_chat_selection_matches_pinyin_greeting(self):
+        """拼音问候直接返回 chat。"""
+        selection = quick_chat_selection("nihao")
+
+        self.assertIsNotNone(selection)
+        self.assertEqual(selection.action, "chat")
+
+    def test_quick_chat_selection_matches_thanks(self):
+        """明显感谢直接返回 chat。"""
+        selection = quick_chat_selection("谢谢")
+
+        self.assertIsNotNone(selection)
+        self.assertEqual(selection.action, "chat")
+
+    def test_quick_chat_selection_ignores_weather(self):
+        """天气问题不能被误判为普通对话。"""
+        self.assertIsNone(quick_chat_selection("今天天气如何"))
+
+    def test_quick_chat_selection_ignores_search(self):
+        """搜索问题不能被误判为普通对话。"""
+        self.assertIsNone(quick_chat_selection("搜索 LangGraph 最新消息"))
+
+    def test_quick_chat_selection_ignores_mixed_intent(self):
+        """包含问候但有明确任务时不能跳过工具选择。"""
+        self.assertIsNone(quick_chat_selection("你好，帮我查一下天气"))
+
+    def test_should_enter_tool_mode_ignores_plain_chat(self):
+        """普通多语言问候不进入工具模式。"""
+        self.assertFalse(should_enter_tool_mode("你好"))
+        self.assertFalse(should_enter_tool_mode("hello"))
+        self.assertFalse(should_enter_tool_mode("こんにちは"))
+
+    def test_should_enter_tool_mode_detects_weather(self):
+        """天气问题进入工具模式。"""
+        self.assertTrue(should_enter_tool_mode("今天天气如何"))
+
+    def test_should_enter_tool_mode_detects_search(self):
+        """搜索问题进入工具模式。"""
+        self.assertTrue(should_enter_tool_mode("搜索 LangGraph 最新消息"))
+
+    def test_should_enter_tool_mode_detects_realtime_market(self):
+        """实时市场类问题进入工具模式。"""
+        self.assertTrue(should_enter_tool_mode("我想看今天的股票市场行情"))
+
+    def test_should_enter_tool_mode_detects_rag_file_and_memory(self):
+        """RAG、文件和记忆信号进入工具模式。"""
+        self.assertTrue(should_enter_tool_mode("根据知识库回答 LangGraph 是什么"))
+        self.assertTrue(should_enter_tool_mode("总结 [文件: docs/task-plan.md]"))
+        self.assertTrue(should_enter_tool_mode("请记住我喜欢中文回答"))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -93,6 +93,52 @@ class CliStreamTest(unittest.TestCase):
         self.assertIn("检索中...", output)
         self.assertIn("Agent: 你好", output)
 
+    def test_update_progress_ignores_normal_chat_nodes(self):
+        """普通节点 updates 不应显示检索、规划、思考等噪音进度。"""
+        self.assertEqual(cli._update_progress_message({"retrieval": {}}), "")
+        self.assertEqual(cli._update_progress_message({"planning": {}}), "")
+        self.assertEqual(cli._update_progress_message({"agent": {}}), "")
+        self.assertEqual(cli._update_progress_message({"memory": {}}), "")
+        self.assertEqual(cli._update_progress_message({"response": {}}), "")
+
+    def test_update_progress_keeps_state_fallbacks(self):
+        """确认、工具和错误节点仍保留兜底进度。"""
+        self.assertEqual(cli._update_progress_message({"confirm": {}}), "等待人工确认...")
+        self.assertEqual(cli._update_progress_message({"tools": {}}), "执行工具中...")
+        self.assertEqual(cli._update_progress_message({"reflection": {}}), "核对工具结果...")
+        self.assertEqual(cli._update_progress_message({"error": {}}), "生成错误响应...")
+
+    def test_stream_response_prints_tool_custom_progress(self):
+        """工具 custom 事件仍应显示进度。"""
+        final_state = {
+            "messages": [],
+            "final_response": {"content": "完成"},
+            "tool_calls": [],
+            "tool_errors": [],
+            "retrieval_results": [],
+            "last_error": {},
+            "pending_confirmation": {},
+            "memory_updated": False,
+            "trace_id": "trace",
+            "node_runs": [],
+            "step_count": 1,
+            "max_steps": 8,
+        }
+        chunks = [
+            {"type": "custom", "data": {"message": "调用工具 get_weather..."}},
+            {"type": "messages", "data": (AIMessageChunk(content="完成"), {"tags": []})},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "app", FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                cli._stream_response({"messages": []})
+
+        output = buffer.getvalue()
+        self.assertIn("调用工具 get_weather...", output)
+        self.assertIn("Agent: 完成", output)
+
     def test_stream_response_falls_back_when_no_tokens(self):
         """没有 token 时使用统一响应渲染。"""
         final_state = {
@@ -108,6 +154,35 @@ class CliStreamTest(unittest.TestCase):
 
         self.assertEqual(result, final_state)
         self.assertIn("Agent: 需要确认", buffer.getvalue())
+
+    def test_stream_debug_tail_does_not_repeat_answer(self):
+        """流式 debug 尾部不应重复打印回答正文。"""
+        final_state = {
+            "messages": [],
+            "final_response": {
+                "content": "回答内容",
+                "retrieval_sources": [],
+                "tool_calls": [],
+                "tool_summary": [],
+                "errors": [],
+                "trace_id": "trace",
+                "node_runs": [{"node_name": "planning", "success": True, "duration_ms": 1.0, "error": ""}],
+            },
+        }
+        chunks = [
+            {"type": "messages", "data": (AIMessageChunk(content="回答内容"), {"tags": []})},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "app", FakeStreamApp(chunks)), patch.object(cli, "OUTPUT_DEBUG", True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                cli._stream_response({"messages": []})
+
+        output = buffer.getvalue()
+        self.assertEqual(output.count("回答内容"), 1)
+        self.assertIn("Debug:", output)
+        self.assertIn("planning", output)
 
 
 if __name__ == "__main__":

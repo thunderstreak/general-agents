@@ -82,6 +82,21 @@ class CliSessionCommandTest(unittest.TestCase):
 
             self.assertNotEqual(new.session_id, old.session_id)
             self.assertEqual(new_state["messages"], [])
+            self.assertEqual(new_state["plan"], {})
+            self.assertEqual(new_state["reflection"], {})
+
+    def test_reset_turn_state_clears_plan_and_reflection(self):
+        """每轮开始时清空上一轮 plan 和 reflection。"""
+        state = cli._new_state()
+        state["plan"] = {"mode": "tool"}
+        state["reflection"] = {"status": "passed"}
+        state["retrieval_results"] = [{"source": "old"}]
+
+        result = cli._reset_turn_state(state)
+
+        self.assertEqual(result["plan"], {})
+        self.assertEqual(result["reflection"], {})
+        self.assertEqual(result["retrieval_results"], [])
 
 
 def _patch_store_dir(tmp_dir: str):
