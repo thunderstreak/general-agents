@@ -4,11 +4,10 @@ import operator
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
-from agent_app.config import BASE_URL, MODEL_NAME, OPENAI_API_KEY
+from agent_app.llm import get_chat_model, invoke_with_fallback
 from agent_app.tool_selector import select_tool
 from agent_app.tools import tool_metadata_by_name, tools, tools_by_name
 from agent_app.tools.runtime import run_tool
@@ -23,7 +22,7 @@ class AgentState(TypedDict):
     user_profile: dict
 
 
-llm = ChatOpenAI(model=MODEL_NAME, base_url=BASE_URL, openai_api_key=OPENAI_API_KEY)
+llm = get_chat_model()
 llm_with_tools = llm.bind_tools(tools)
 
 
@@ -35,12 +34,27 @@ def _latest_human_message(messages: list):
     return None
 
 
+def _message_text(message: HumanMessage) -> str:
+    """提取 HumanMessage 中可供工具选择器使用的文本。"""
+    if isinstance(message.content, str):
+        return message.content
+
+    if isinstance(message.content, list):
+        text_parts = []
+        for part in message.content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text_parts.append(part.get("text", ""))
+        return "\n".join(text_parts)
+
+    return str(message.content)
+
+
 def agent_node(state: AgentState):
     """调用模型，生成回复或工具调用。"""
     messages = state["messages"]
 
     if isinstance(messages[-1], ToolMessage):
-        response = llm.invoke(
+        response = invoke_with_fallback(
             [
                 SystemMessage(
                     content=(
@@ -54,12 +68,12 @@ def agent_node(state: AgentState):
         )
     else:
         latest_human_message = _latest_human_message(messages)
-        selection = select_tool(latest_human_message.content) if latest_human_message else None
+        selection = select_tool(_message_text(latest_human_message)) if latest_human_message else None
 
         if selection and selection.action == "tool":
             response = _tool_selection_to_message(selection.tool_name, selection.args)
         elif selection and selection.action == "chat":
-            response = llm.invoke(messages)
+            response = invoke_with_fallback(messages)
         else:
             response = llm_with_tools.invoke(messages)
 

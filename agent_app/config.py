@@ -19,3 +19,12 @@ def _get_required_env(name: str) -> str:
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-5.5")
 BASE_URL = os.getenv("BASE_URL", "https://tokendocker.com/v1")
 OPENAI_API_KEY = _get_required_env("OPENAI_API_KEY")
+
+CHAT_MODEL_NAME = os.getenv("CHAT_MODEL_NAME", MODEL_NAME)
+TOOL_SELECTOR_MODEL_NAME = os.getenv("TOOL_SELECTOR_MODEL_NAME", MODEL_NAME)
+INTENT_MODEL_NAME = os.getenv("INTENT_MODEL_NAME", MODEL_NAME)
+VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", MODEL_NAME)
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+FALLBACK_MODEL_NAME = os.getenv("FALLBACK_MODEL_NAME", "")
+MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "60"))
+MODEL_MAX_RETRIES = int(os.getenv("MODEL_MAX_RETRIES", "2"))

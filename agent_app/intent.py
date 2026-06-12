@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
-from agent_app.config import BASE_URL, MODEL_NAME, OPENAI_API_KEY
+from agent_app.llm import get_intent_model
 from agent_app.prompt_loader import load_prompt
 
 
@@ -27,7 +26,7 @@ class IntentDecision:
 INTENT_SYSTEM_PROMPT = load_prompt("intent_classifier.md")
 
 
-intent_llm = ChatOpenAI(model=MODEL_NAME, base_url=BASE_URL, openai_api_key=OPENAI_API_KEY, temperature=0)
+intent_llm = get_intent_model()
 
 
 def classify_intent(user_text: str) -> IntentDecision:

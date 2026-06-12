@@ -5,9 +5,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
-from agent_app.config import BASE_URL, MODEL_NAME, OPENAI_API_KEY
+from agent_app.llm import get_tool_selector_model
 from agent_app.prompt_loader import load_prompt
 from agent_app.tools import tool_metadata
 
@@ -31,7 +30,7 @@ class ToolSelection:
         return asdict(self)
 
 
-selector_llm = ChatOpenAI(model=MODEL_NAME, base_url=BASE_URL, openai_api_key=OPENAI_API_KEY, temperature=0)
+selector_llm = get_tool_selector_model()
 
 
 def select_tool(user_text: str) -> ToolSelection:

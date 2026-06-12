@@ -1,7 +1,6 @@
 """命令行交互入口。"""
 
-from langchain_core.messages import HumanMessage
-
+from agent_app.file_inputs import build_human_message, parse_user_input
 from agent_app.graph import app
 
 
@@ -23,7 +22,8 @@ def run_cli():
             break
 
         # 保留多轮上下文，让工具调用和模型回复都在消息历史中连续出现
-        state["messages"].append(HumanMessage(content=user_input))
+        text, file_results = parse_user_input(user_input)
+        state["messages"].append(build_human_message(text, file_results))
         result = app.invoke(state)
         state = result
         last_ai = state["messages"][-1]
