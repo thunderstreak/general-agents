@@ -2,14 +2,15 @@
 
 from typing import Annotated, Literal, TypedDict
 
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 
 from agent_app.config import BASE_URL, MODEL_NAME, OPENAI_API_KEY
-from agent_app.intent import classify_intent
-from agent_app.tools import get_location, get_weather, web_search, tools, tools_by_name
+from agent_app.tool_selector import select_tool
+from agent_app.tools import tool_metadata_by_name, tools, tools_by_name
+from agent_app.tools.runtime import run_tool
 
 
 class AgentState(TypedDict):
@@ -18,9 +19,6 @@ class AgentState(TypedDict):
 
 llm = ChatOpenAI(model=MODEL_NAME, base_url=BASE_URL, openai_api_key=OPENAI_API_KEY)
 llm_with_tools = llm.bind_tools(tools)
-llm_with_location = llm.bind_tools([get_location], tool_choice="get_location")
-llm_with_weather = llm.bind_tools([get_weather], tool_choice="get_weather")
-llm_with_web_search = llm.bind_tools([web_search], tool_choice="web_search")
 
 
 def _latest_human_message(messages: list):
@@ -36,23 +34,37 @@ def agent_node(state: AgentState):
     messages = state["messages"]
 
     if isinstance(messages[-1], ToolMessage):
-        response = llm.invoke(messages)
+        response = llm.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "你正在根据工具返回结果回复用户。"
+                        "如果工具结果已经包含答案，必须优先使用工具结果，不要因为工具入参为空而要求用户重复提供信息。"
+                        "如果工具结果明确失败，再说明失败原因并给出下一步建议。"
+                    )
+                ),
+                *messages,
+            ]
+        )
     else:
         latest_human_message = _latest_human_message(messages)
-        intent_decision = classify_intent(latest_human_message.content) if latest_human_message else None
+        selection = select_tool(latest_human_message.content) if latest_human_message else None
 
-        if intent_decision and intent_decision.intent == "location":
-            response = llm_with_location.invoke(messages)
-        elif intent_decision and intent_decision.intent == "weather":
-            response = llm_with_weather.invoke(messages)
-        elif intent_decision and intent_decision.intent == "web_search":
-            response = llm_with_web_search.invoke(messages)
-        elif intent_decision and intent_decision.intent == "chat":
+        if selection and selection.action == "tool":
+            response = _tool_selection_to_message(selection.tool_name, selection.args)
+        elif selection and selection.action == "chat":
             response = llm.invoke(messages)
         else:
             response = llm_with_tools.invoke(messages)
 
     return {"messages": [response]}
+
+
+def _tool_selection_to_message(tool_name: str, tool_args: dict):
+    """把工具选择结果转换为带 tool_calls 的 AIMessage。"""
+    tool_call_id = f"selected_{tool_name}"
+    tool_call = ToolCall(name=tool_name, args=tool_args, id=tool_call_id)
+    return AIMessage(content="", tool_calls=[tool_call])
 
 
 def tool_node(state: AgentState):
@@ -65,7 +77,7 @@ def tool_node(state: AgentState):
         tool_name = tc["name"]
         tool_args = tc["args"]
         print(f"🛠️ 调用工具: {tool_name}({tool_args})")
-        result = tools_by_name[tool_name].invoke(tool_args)
+        result = run_tool(tool_name, tool_args, tools_by_name, tool_metadata_by_name)
         tool_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
 
     return {"messages": tool_messages}

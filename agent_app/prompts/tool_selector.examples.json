@@ -1,0 +1,44 @@
+[
+  {
+    "input": "帮我查询今天天气",
+    "expected_action": "tool",
+    "expected_tool_name": "get_weather",
+    "min_confidence": 0.7,
+    "reason": "用户询问天气，城市可由工具自动定位"
+  },
+  {
+    "input": "帮我搜索今天长沙天气",
+    "expected_action": "tool",
+    "expected_tool_name": "get_weather",
+    "min_confidence": 0.7,
+    "reason": "虽然用户提到搜索，但目标是天气数据"
+  },
+  {
+    "input": "我现在在哪里",
+    "expected_action": "tool",
+    "expected_tool_name": "get_location",
+    "min_confidence": 0.7,
+    "reason": "用户询问当前位置"
+  },
+  {
+    "input": "帮我搜索 LangGraph 是什么",
+    "expected_action": "tool",
+    "expected_tool_name": "web_search",
+    "min_confidence": 0.7,
+    "reason": "用户明确要求搜索外部网页"
+  },
+  {
+    "input": "帮我查英伟达今天股价",
+    "expected_action": "tool",
+    "expected_tool_name": "web_search",
+    "min_confidence": 0.7,
+    "reason": "当前没有股票专用工具，应回退到网页搜索"
+  },
+  {
+    "input": "你好",
+    "expected_action": "chat",
+    "expected_tool_name": "",
+    "min_confidence": 0.7,
+    "reason": "普通聊天不需要工具"
+  }
+]
