@@ -91,7 +91,7 @@ class OrchestratorTest(unittest.TestCase):
         tool_call = ToolCall(name="web_search", args={"query": "test"}, id="tool_1")
         state["messages"] = [HumanMessage(content="搜索 test"), AIMessage(content="", tool_calls=[tool_call])]
 
-        with patch("agent_app.graph._emit_progress") as emit_progress:
+        with patch("agent_app.nodes._emit_progress") as emit_progress:
             agent_node(state)
 
         emit_progress.assert_not_called()
@@ -117,7 +117,7 @@ class OrchestratorTest(unittest.TestCase):
             "status": "ready",
         }
 
-        with patch("agent_app.graph._emit_progress") as emit_progress:
+        with patch("agent_app.nodes._emit_progress") as emit_progress:
             result = agent_node(state)
 
         emit_progress.assert_not_called()
@@ -205,7 +205,7 @@ class OrchestratorTest(unittest.TestCase):
             "status": "ready",
         }
 
-        with patch("agent_app.graph.invoke_with_fallback", return_value=AIMessage(content="你好")) as invoke:
+        with patch("agent_app.nodes.invoke_with_fallback", return_value=AIMessage(content="你好")) as invoke:
             result = agent_node(state)
 
         invoke.assert_called_once()
@@ -223,8 +223,8 @@ class OrchestratorTest(unittest.TestCase):
             "status": "ready",
         }
 
-        with patch("agent_app.graph.invoke_with_fallback", return_value=AIMessage(content="你好")), patch(
-            "agent_app.graph._emit_progress"
+        with patch("agent_app.nodes.invoke_with_fallback", return_value=AIMessage(content="你好")), patch(
+            "agent_app.nodes._emit_progress"
         ) as emit_progress:
             agent_node(state)
 
@@ -251,7 +251,7 @@ class OrchestratorTest(unittest.TestCase):
         }
         fake_model = FakeToolModel()
 
-        with patch("agent_app.graph._get_llm_with_tools", return_value=fake_model):
+        with patch("agent_app.nodes._get_llm_with_tools", return_value=fake_model):
             result = agent_node(state)
 
         self.assertTrue(fake_model.called)
@@ -273,17 +273,17 @@ class OrchestratorTest(unittest.TestCase):
 
         fake_llm = FakeLLM()
 
-        with patch("agent_app.graph._get_chat_llm", return_value=fake_llm):
+        with patch("agent_app.nodes._get_chat_llm", return_value=fake_llm):
             _invoke_tool_agent([], {"candidate_tool_names": ["fetch_url"]})
 
         self.assertEqual(fake_llm.bound_tool_names, ["fetch_url"])
 
-    def test_graph_import_does_not_initialize_chat_model(self):
-        """导入 graph 模块时不初始化聊天模型。"""
-        import agent_app.graph as graph_module
+    def test_nodes_import_does_not_initialize_chat_model(self):
+        """导入 nodes 模块时不初始化聊天模型。"""
+        import agent_app.nodes as nodes_module
 
-        with patch("agent_app.graph.get_chat_model", side_effect=AssertionError("不应导入时初始化模型")):
-            reloaded = importlib.reload(graph_module)
+        with patch("agent_app.nodes.get_chat_model", side_effect=AssertionError("不应导入时初始化模型")):
+            reloaded = importlib.reload(nodes_module)
 
         self.assertIsNone(reloaded._chat_llm)
         self.assertIsNone(reloaded._llm_with_tools)
@@ -332,13 +332,13 @@ class OrchestratorTest(unittest.TestCase):
         state = _base_state()
         state["messages"] = [HumanMessage(content="今天天气 如何")]
 
-        with patch("agent_app.graph._emit_progress") as emit_progress:
+        with patch("agent_app.nodes._emit_progress") as emit_progress:
             retrieval_node(state)
 
         emit_progress.assert_not_called()
 
         state["messages"] = [HumanMessage(content="根据知识库回答 LangGraph 是什么")]
-        with patch("agent_app.graph._emit_progress") as emit_progress:
+        with patch("agent_app.nodes._emit_progress") as emit_progress:
             retrieval_node(state)
 
         emit_progress.assert_called_once_with("检索中...", node="retrieval")

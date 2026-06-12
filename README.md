@@ -68,7 +68,6 @@ OPENAI_API_KEY=your-api-key
 MODEL_NAME=your-model-name
 CHAT_MODEL_NAME=your-model-name
 TOOL_SELECTOR_MODEL_NAME=your-model-name
-INTENT_MODEL_NAME=your-model-name
 VISION_MODEL_NAME=your-vision-model-name
 ```
 
@@ -150,7 +149,6 @@ URL 内容抓取：
 | `MODEL_NAME` | 否 | 空 | 默认模型名，兼容旧配置。 |
 | `CHAT_MODEL_NAME` | 否 | `MODEL_NAME` | 主聊天模型，用于普通对话和工具结果总结。 |
 | `TOOL_SELECTOR_MODEL_NAME` | 否 | `MODEL_NAME` | 工具选择模型，用于判断是否调用工具以及生成工具参数。 |
-| `INTENT_MODEL_NAME` | 否 | `MODEL_NAME` | 意图分类模型，主要给旧 Intent Router 和检查脚本使用。 |
 | `VISION_MODEL_NAME` | 否 | `MODEL_NAME` | 多模态视觉模型，用于图片输入。模型和服务需要支持图片。 |
 | `EMBEDDING_MODEL_NAME` | 否 | `text-embedding-3-small` | Embedding 模型，为后续 RAG 检索预留。 |
 | `FALLBACK_MODEL_NAME` | 否 | 空 | 备用模型。主聊天模型失败时使用，留空表示不启用。 |
@@ -175,17 +173,20 @@ langgraph/
 ├── .env.example                     # 环境变量示例
 ├── agent_app/
 │   ├── cli.py                       # 命令行交互循环
+│   ├── cli_stream.py                # CLI 流式输出渲染
 │   ├── config.py                    # 环境变量和运行配置
-│   ├── graph.py                     # LangGraph 图和节点定义
+│   ├── graph.py                     # LangGraph 图构建和路由
+│   ├── nodes.py                     # LangGraph 节点实现
+│   ├── state.py                     # AgentState 和 state 初始化
 │   ├── llm.py                       # 模型实例、fallback 和 embedding 管理
 │   ├── orchestrator.py              # 编排辅助结构、trace 和错误状态
 │   ├── output.py                    # 统一响应结构和 CLI 渲染
 │   ├── memory.py                    # 长期记忆读写和上下文注入
 │   ├── tool_selector.py             # 基于模型的工具选择器
-│   ├── intent.py                    # 意图分类器
 │   ├── prompt_loader.py             # prompt 文件加载
 │   ├── prompts/                     # prompt 和样例数据
 │   ├── tools/                       # 工具注册、运行时和具体工具
+│   ├── utils/                       # 通用 helper
 │   └── file_inputs/                 # @文件路径 输入解析
 ├── scripts/                         # prompt 样例检查脚本
 ├── tests/                           # 单元测试
@@ -338,17 +339,11 @@ python -m unittest discover tests
 python scripts/check_tool_selector_examples.py
 ```
 
-运行意图分类样例检查：
-
-```bash
-python scripts/check_intent_examples.py
-```
-
 注意：样例检查会真实调用模型，因此需要 `.env` 中的模型配置可用。
 
 ## 开发说明
 
-- `agent_app/graph.py` 负责 LangGraph 节点编排和节点实现；模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
+- `agent_app/graph.py` 负责 LangGraph 图构建和路由；`agent_app/nodes.py` 负责节点实现。模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
 - `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 state reset 和旧会话默认值补齐。
 - `agent_app/utils/` 存放通用 helper；其中 `utils/messages.py` 提供 LangChain message 文本提取，避免各模块重复解析消息结构。
 - `agent_app/cli.py` 保留 CLI 主循环、输入读取和会话命令；`agent_app/cli_stream.py` 负责流式 chunk 解析、进度输出和 debug 尾部渲染。
