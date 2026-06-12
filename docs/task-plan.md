@@ -5,7 +5,7 @@
 | 模块 | 状态 | 优先级 | 当前实现 | 后续任务 |
 |---|---|---|---|---|
 | 配置管理 | 已完成 | P0 | `agent_app/config.py` 从 `.env` / 环境变量读取模型名、`base_url`、API key，并提供 `.env.example` | 后续可继续区分 dev/test/prod 配置 |
-| 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、orchestrator、output、CLI stream、CLI session、session store、CLI input、state、message utils 等基础行为 | 增加模型 mock、工具 mock、意图/工具选择样例自动化、端到端测试 |
+| 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、graph、nodes、output、CLI stream、CLI session、session store、CLI input、state、message utils 等基础行为；节点测试已按领域拆分 | 增加模型 mock、工具 mock、工具选择样例自动化、端到端测试 |
 | 日志与可观测性 | 已实现但功能不全 | P0 | 编排层已记录 `trace_id`、节点运行耗时和成功/失败状态；CLI 流式输出可展示节点进度 | 增加 structured logging、token/cost 统计、工具输入输出持久化记录、loop/stop reason |
 | 安全与权限 | 未实现 | P0 | 工具可直接调用外部接口 | 增加工具白名单、敏感操作确认、API key 保护、输入过滤 |
 | 感知理解 | 已实现但分散 | P1 | CLI 支持文本输入和 `@文件路径`，文件解析模块支持文本、文档、表格、图片输入 | 增加统一 perception 节点，规范输入解析结果、附件元数据和多模态能力判断 |
@@ -18,7 +18,7 @@
 | Memory 记忆 | 已完成但检索弱 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 增加记忆管理命令、隐私策略、长期记忆语义检索和更细粒度存储 |
 | 反思评估 | 已完成基础结构 | P2 | 已新增轻量 `reflection_node`，工具执行后核对成功/失败，成功回到 `agent_node` 总结，失败进入错误响应 | 增强结构化反思：判断结果是否充分、是否需要重试/换工具/补充提问 |
 | 循环迭代控制 | 弱实现 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；工具后可回到 agent | 增加 loop reason、stop reason、retry policy、反思后回到 planning/tool/response 的路由 |
-| Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes.py` 负责节点实现；支持 retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 接入真实 RAG、增强 reflection、plan 推进和更细路由 |
+| Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes/` 按领域拆分节点实现；支持 retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 接入真实 RAG、增强 reflection、plan 推进和更细路由 |
 | 数据存储 | 已实现基础会话保存 | P2 | 已有 `.agent_memory.json` 长期记忆和 `.agent_sessions/` 文件夹式会话历史；RAG 文档/chunk 元数据、Chroma 向量索引、工具记录和 trace 尚未持久化 | 补齐 RAG 元数据、工具运行记录、节点 trace、用户配置和数据清理能力 |
 | 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已拆分到 `agent_app/cli_stream.py` | 后续增加 API/前端输出适配和更丰富的 Markdown 渲染 |
 | API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行；输出层已提供可复用的结构化 `final_response` | 增加 FastAPI HTTP API、内存 session store、会话创建/恢复、确认流程 API 化、健康检查和基础测试 |
@@ -58,7 +58,8 @@
    - [ ] 为天气工具、定位工具、网页搜索工具补 mock 测试。
    - [x] 为 URL Fetch 工具补 mock 测试。
    - [x] 为 message utils 和 state 初始化补单元测试。
-   - [ ] 为工具选择、规划、反思和端到端链路增加模型 mock 测试。
+   - [x] 将 `test_orchestrator.py` 拆分为 graph 和 nodes 领域测试文件。
+   - [ ] 为工具选择和端到端链路增加模型 mock 测试。
 
 3. [ ] 日志与可观测性
    - [ ] 将工具调用 `print` 替换为统一日志。
@@ -116,9 +117,11 @@
 7. [ ] 代码结构优化
    - [x] 提取公共 `agent_app/utils/messages.py`，统一 LangChain message 文本提取。
    - [x] 提取 `agent_app/cli_stream.py`，拆分 CLI 流式输出渲染。
-   - [x] 拆分 `graph.py` 节点实现与图构建：`graph.py` 保留图入口和路由，`nodes.py` 承载节点实现。
+   - [x] 拆分 `graph.py` 节点实现与图构建：`graph.py` 保留图入口和路由，`nodes/` 承载节点实现。
+   - [x] 将 `nodes.py` 继续拆为 `nodes/` 包，按 retrieval、planning、agent、tools、reflection、memory、response 等领域组织。
+   - [x] 拆分过大的 `test_orchestrator.py`，按 graph/nodes 领域组织测试。
    - [x] 清理历史 `agent_app/intent.py` 和样例检查脚本，避免维护两套意图路由。
-   - [ ] 后续继续按 retrieval/planning/agent/tool/reflection 领域拆分节点内部逻辑。
+   - [ ] 后续拆分 CLI 命令处理逻辑。
 
 ### P2：补齐知识与记忆能力
 

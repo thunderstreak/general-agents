@@ -176,7 +176,7 @@ langgraph/
 │   ├── cli_stream.py                # CLI 流式输出渲染
 │   ├── config.py                    # 环境变量和运行配置
 │   ├── graph.py                     # LangGraph 图构建和路由
-│   ├── nodes.py                     # LangGraph 节点实现
+│   ├── nodes/                       # LangGraph 节点实现，按领域拆分
 │   ├── state.py                     # AgentState 和 state 初始化
 │   ├── llm.py                       # 模型实例、fallback 和 embedding 管理
 │   ├── orchestrator.py              # 编排辅助结构、trace 和错误状态
@@ -343,7 +343,7 @@ python scripts/check_tool_selector_examples.py
 
 ## 开发说明
 
-- `agent_app/graph.py` 负责 LangGraph 图构建和路由；`agent_app/nodes.py` 负责节点实现。模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
+- `agent_app/graph.py` 负责 LangGraph 图构建和路由；`agent_app/nodes/` 按 retrieval、planning、agent、tools、reflection 等领域拆分节点实现。模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
 - `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 state reset 和旧会话默认值补齐。
 - `agent_app/utils/` 存放通用 helper；其中 `utils/messages.py` 提供 LangChain message 文本提取，避免各模块重复解析消息结构。
 - `agent_app/cli.py` 保留 CLI 主循环、输入读取和会话命令；`agent_app/cli_stream.py` 负责流式 chunk 解析、进度输出和 debug 尾部渲染。
