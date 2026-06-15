@@ -4,7 +4,7 @@ import time
 
 from langchain_core.messages import ToolMessage
 
-from agent_app.nodes.common import emit_progress, join_tool_errors, next_step_state, node_run
+from agent_app.nodes.common import emit_progress, join_tool_errors, merge_attempted_tools, next_step_state, node_run
 from agent_app.state import AgentState
 from agent_app.tools import tool_metadata_by_name, tools_by_name
 from agent_app.tools.runtime import run_tool
@@ -44,14 +44,7 @@ def tool_node(state: AgentState):
         "messages": tool_messages,
         "tool_calls": tool_call_records,
         "tool_errors": tool_error_records,
-        "attempted_tools": _merge_attempted_tools(state, [record["tool_name"] for record in tool_call_records]),
+        "attempted_tools": merge_attempted_tools(state, [record["tool_name"] for record in tool_call_records]),
         "node_runs": [node_run("tools", start_time, success=not tool_error_records, error=join_tool_errors(tool_error_records))],
     }
     return state_update
-
-
-def _merge_attempted_tools(state: AgentState, tool_names: list[str]) -> list[str]:
-    """合并本轮已尝试工具。"""
-    names = [name for name in state.get("attempted_tools", []) if isinstance(name, str) and name]
-    names.extend(name for name in tool_names if isinstance(name, str) and name)
-    return list(dict.fromkeys(names))

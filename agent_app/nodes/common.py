@@ -53,3 +53,10 @@ def node_run(node_name: str, start_time: float, success: bool = True, error: str
 def join_tool_errors(tool_error_records: list[dict]) -> str:
     """拼接工具错误信息。"""
     return "；".join(record.get("error") or record.get("result", "") for record in tool_error_records)
+
+
+def merge_attempted_tools(state: AgentState, tool_names: list[str]) -> list[str]:
+    """合并本轮已尝试工具。"""
+    names = [name for name in state.get("attempted_tools", []) if isinstance(name, str) and name]
+    names.extend(name for name in tool_names if isinstance(name, str) and name)
+    return list(dict.fromkeys(names))
