@@ -193,8 +193,17 @@ def _classify_tool_result_error_type(tool_name: str, text: str) -> str:
     lowered = text.lower()
     if not text.strip():
         return ERROR_NO_RESULTS if tool_name == "web_search" else ERROR_UNKNOWN
-    if "没有提供城市" in text or "请提供城市" in text or "缺少 hostname" in lowered or "missing" in lowered or "required" in lowered:
+    if (
+        "没有提供城市" in text
+        or "请提供城市" in text
+        or "缺少搜索关键词" in text
+        or "缺少 hostname" in lowered
+        or "missing" in lowered
+        or "required" in lowered
+    ):
         return ERROR_MISSING_PARAMETER
+    if "配置错误" in text or "缺少 tavily_api_key" in lowered or "api key" in lowered:
+        return ERROR_PERMISSION
     if "禁止访问 localhost" in text or "内网地址" in text or "metadata 地址" in text:
         return ERROR_SECURITY_BLOCKED
     if "仅支持 http:// 或 https://" in text:
@@ -202,8 +211,6 @@ def _classify_tool_result_error_type(tool_name: str, text: str) -> str:
     if "不支持正文抓取" in text or "未提取到正文文本" in text:
         return ERROR_UNSUPPORTED_CONTENT
     if "未搜索到相关结果" in text or "无搜索结果" in text or "没有搜索结果" in text:
-        return ERROR_NO_RESULTS
-    if "网页搜索失败" in text and "未解析到搜索结果" in text:
         return ERROR_NO_RESULTS
     if "失败" in text or "error" in lowered or "failed" in lowered:
         return _classify_error_type(text)

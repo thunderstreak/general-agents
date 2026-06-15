@@ -136,6 +136,27 @@ class ToolRuntimeTest(unittest.TestCase):
         self.assertEqual(record.error_type, ERROR_UNSUPPORTED_CONTENT)
         self.assertEqual(record.fallback_tool_names, ["web_search"])
 
+    def test_web_search_missing_query_result_is_classified(self):
+        """搜索缺查询词会标记为追问用户。"""
+        tool = FakeTool(["缺少搜索关键词。请提供要搜索的内容。"])
+        metadata = ToolMetadata(name="web_search", category="search", description="网页搜索")
+
+        record = run_tool("web_search", {}, {"web_search": tool}, {"web_search": metadata})
+
+        self.assertEqual(record.result_status, RESULT_ASK_USER)
+        self.assertEqual(record.error_type, ERROR_MISSING_PARAMETER)
+        self.assertEqual(record.missing_info, "查询词")
+
+    def test_web_search_missing_api_key_result_is_classified(self):
+        """Tavily 配置错误会标记为权限配置问题。"""
+        tool = FakeTool(["网页搜索配置错误：缺少 TAVILY_API_KEY。请在 .env 中配置 Tavily Search API key。"])
+        metadata = ToolMetadata(name="web_search", category="search", description="网页搜索")
+
+        record = run_tool("web_search", {}, {"web_search": tool}, {"web_search": metadata})
+
+        self.assertEqual(record.result_status, RESULT_FAILED)
+        self.assertEqual(record.error_type, ERROR_PERMISSION)
+
 
 if __name__ == "__main__":
     unittest.main()

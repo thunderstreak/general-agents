@@ -249,8 +249,8 @@ class ReflectionNodeTest(unittest.TestCase):
         self.assertEqual(result["reflection"]["status"], "passed")
         self.assertEqual(result["reflection"]["next_action"], "agent")
 
-    def test_reflection_node_retries_irrelevant_web_search_result(self):
-        """web_search 结果不相关时调整查询重试。"""
+    def test_reflection_node_passes_web_search_result_without_relevance_retry(self):
+        """web_search 有结果时不再做本地相关性重试。"""
         state = base_state()
         state["messages"] = [
             HumanMessage(content="今天金价"),
@@ -269,55 +269,10 @@ class ReflectionNodeTest(unittest.TestCase):
         with patch("agent_app.nodes.reflection.emit_progress") as emit_progress:
             result = reflection_node(state)
 
-        self.assertEqual(result["reflection"]["status"], "retry")
-        self.assertEqual(result["reflection"]["next_action"], "tools")
-        self.assertEqual(result["last_tool_request"]["tool_calls"][0]["name"], "web_search")
-        self.assertIn("今天金价", result["last_tool_request"]["tool_calls"][0]["args"]["query"])
-        emit_progress.assert_any_call(
-            "已搜索 1 次，但结果不匹配，正在调整关键词重试...",
-            event="tool_retry",
-            node="reflection",
-            tool_name="web_search",
-        )
-
-    def test_reflection_node_stops_after_web_search_relevance_limit(self):
-        """web_search 多次不相关后进入 response，不报 max_steps。"""
-        state = base_state()
-        state["step_count"] = state["max_steps"]
-        state["messages"] = [
-            HumanMessage(content="今天金价"),
-            ToolMessage(content="1. 今日 头条\n链接: https://www.toutiao.com/\n摘要: 新闻热点", tool_call_id="tool_3"),
-        ]
-        state["tool_calls"] = [
-            {
-                "tool_name": "web_search",
-                "tool_args": {"query": "今日黄金价格"},
-                "success": True,
-                "result": "1. 今日 头条\n链接: https://www.toutiao.com/\n摘要: 新闻热点",
-                "result_status": "ok",
-            },
-            {
-                "tool_name": "web_search",
-                "tool_args": {"query": "今天金价 今日黄金价格 权威 实时 价格"},
-                "success": True,
-                "result": "1. 今日 热榜官网\n链接: https://tophub.today/\n摘要: 热榜",
-                "result_status": "ok",
-            },
-            {
-                "tool_name": "web_search",
-                "tool_args": {"query": "今天金价 黄金 金价 XAU"},
-                "success": True,
-                "result": "1. 今日 头条\n链接: https://www.toutiao.com/\n摘要: 新闻热点",
-                "result_status": "ok",
-            },
-        ]
-
-        result = reflection_node(state)
-
-        self.assertEqual(result["reflection"]["status"], "insufficient")
-        self.assertEqual(result["reflection"]["next_action"], "response")
-        self.assertEqual(result["reflection"]["stop_reason"], "web_search_irrelevant_limit")
-        self.assertEqual(result["last_error"], {})
+        self.assertEqual(result["reflection"]["status"], "passed")
+        self.assertEqual(result["reflection"]["next_action"], "agent")
+        progress_messages = [call.args[0] for call in emit_progress.call_args_list if call.args]
+        self.assertNotIn("已搜索 1 次，但结果不匹配，正在调整关键词重试...", progress_messages)
 
     def test_reflection_node_passes_relevant_web_search_result(self):
         """web_search 结果包含领域关键词时正常总结。"""

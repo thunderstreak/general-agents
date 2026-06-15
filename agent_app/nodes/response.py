@@ -44,5 +44,9 @@ def _reflection_response_text(reflection: dict) -> str:
     if status == "ask_user":
         return f"我还需要你补充{missing_info}后才能继续。"
     if status == "insufficient":
-        return f"工具没有返回足够可用的信息，暂时无法完成这次请求。{reason}".strip()
+        if missing_info in {"必要信息", "可靠信息", "可用工具结果", "有效工具结果", "相关搜索结果"}:
+            return "我这次没有获取到足够可靠的信息。你可以补充更具体的范围或关键词，我再帮你查。"
+        if missing_info:
+            return f"我这次没有获取到足够可靠的{missing_info}。你可以补充更具体的范围或关键词，我再帮你查。"
+        return "我这次没有获取到足够可靠的信息。你可以补充更具体的范围或关键词，我再帮你查。"
     return reason or "暂时无法完成这次请求。"

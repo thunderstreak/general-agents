@@ -11,7 +11,7 @@
 | 感知理解 | 已完成基础节点 | P1 | 已新增 `perception_node`，统一生成 `input_context`，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 触发信号和候选工具名；CLI 仍负责 `@文件路径` 解析 | 后续增加模型能力校验、输入事件结构、API 文件输入复用和更细多模态判断 |
 | Prompt 管理 | 已完成 | P1 | 工具选择 prompt 已拆分到 `agent_app/prompts/`，并提供样例文件；历史 Intent Router prompt 已清理 | 后续可继续增加版本管理和环境区分 |
 | 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
-| Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
+| Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；`web_search` 已改为 Tavily Search API；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
 | State 状态管理 | 已完成 | P1 | `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐；state 已包含 `messages`、`tool_selection`、`plan`、`reflection`、`tool_calls` 等字段 | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；graph/tool selector 已改为延迟初始化模型；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
 | RAG 知识检索 | 未实现 | P2 | 已有 `EMBEDDING_MODEL_NAME`、`get_embedding_model()`、`retrieval_node`、`retrieval_results` 和输出层来源展示预留；尚未实现真实知识库导入、切分、向量化、Chroma 向量库和检索 | 第一版实现本地文件知识库、文本切分、embedding、Chroma vector store、retriever、引用来源输出和 CLI 知识库命令 |
@@ -55,7 +55,8 @@
 
 2. [ ] 测试基础建设
    - [x] 增加 `unittest` 测试目录和基础测试。
-   - [ ] 为天气工具、定位工具、网页搜索工具补 mock 测试。
+   - [x] 为网页搜索工具补 mock 测试。
+   - [ ] 为天气工具、定位工具补 mock 测试。
    - [x] 为 URL Fetch 工具补 mock 测试。
    - [x] 为 message utils 和 state 初始化补单元测试。
    - [x] 将 `test_orchestrator.py` 拆分为 graph 和 nodes 领域测试文件。

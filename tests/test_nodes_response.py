@@ -53,6 +53,21 @@ class ResponseNodeTest(unittest.TestCase):
         self.assertEqual(result["final_response"]["status"], "success")
         self.assertEqual(result["final_response"]["errors"], [])
 
+    def test_response_node_renders_natural_insufficient_message(self):
+        """reflection 结果不足时不暴露内部工具细节。"""
+        state = base_state()
+        state["reflection"] = {
+            "status": "insufficient",
+            "reason": "未搜索到相关结果。",
+            "next_action": "response",
+            "missing_info": "可靠信息",
+        }
+
+        result = response_node(state)
+
+        self.assertEqual(result["final_response"]["content"], "我这次没有获取到足够可靠的信息。你可以补充更具体的范围或关键词，我再帮你查。")
+        self.assertNotIn("工具没有返回", result["final_response"]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

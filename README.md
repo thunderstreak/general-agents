@@ -158,6 +158,9 @@ URL 内容抓取：
 | `MEMORY_FILE_PATH` | 否 | `.agent_memory.json` | 长期记忆本地 JSON 文件路径。 |
 | `MEMORY_MAX_ITEMS` | 否 | `50` | 最多保留的长期记忆条数。 |
 | `ORCHESTRATOR_MAX_STEPS` | 否 | `8` | 单轮编排最多进入 agent/tool 节点的次数，用于避免工具循环。 |
+| `TAVILY_API_KEY` | 否 | 空 | Tavily Search API key。使用 `web_search` 工具时需要配置。 |
+| `WEB_SEARCH_MAX_RESULTS` | 否 | `5` | Tavily 每次搜索最多返回的结果数量。 |
+| `WEB_SEARCH_SEARCH_DEPTH` | 否 | `basic` | Tavily 搜索深度，可选 `basic` 或 `advanced`。 |
 | `OUTPUT_DEBUG` | 否 | `false` | 是否在 CLI 输出 trace、节点耗时、工具摘要和错误详情。 |
 | `CLI_STREAM` | 否 | `true` | 是否开启 CLI 流式输出。关闭后会等待整轮执行完成再输出。 |
 | `CLI_STREAM_PROGRESS` | 否 | `true` | 流式输出时是否显示检索、工具调用、记忆更新等进度。 |
@@ -247,7 +250,7 @@ CLI 渲染输出
 
 - `get_location`：通过公网 IP 查询大致位置，数据源为 `ip-api.com`。
 - `get_weather`：查询指定城市实时天气；未提供城市时会尝试通过 IP 定位城市，数据源为 `wttr.in`。
-- `web_search`：通过 DuckDuckGo 和 Bing 搜索网页，返回标题、链接和摘要。
+- `web_search`：通过 Tavily Search API 搜索网页，返回标题、链接和摘要；需要配置 `TAVILY_API_KEY`。
 - `fetch_url`：抓取指定 HTTP/HTTPS URL 的文本内容，禁止访问 localhost 和内网地址。
 
 工具统一由 `agent_app/tools/runtime.py` 执行，支持：
@@ -374,7 +377,7 @@ OPENAI_API_KEY=your-api-key
 
 ### 工具调用失败
 
-天气、定位、网页搜索和 URL 抓取依赖外部网络服务。如果网络不可用、服务限流、页面结构变化或目标站点限制访问，工具可能返回失败信息。
+天气、定位、网页搜索和 URL 抓取依赖外部网络服务。`web_search` 需要配置 `TAVILY_API_KEY`；如果网络不可用、服务限流、配置缺失或目标站点限制访问，工具可能返回失败信息。
 
 ### macOS 中文输入无法删除或移动光标
 
