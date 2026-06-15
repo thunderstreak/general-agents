@@ -87,4 +87,4 @@
 
 - `.env`、`.agent_memory.json`、`.agent_sessions/`、`.agent_input_history` 已加入 `.gitignore`，不要提交
 - 编排步骤有上限（默认 8 步），通过 `ORCHESTRATOR_MAX_STEPS` 配置
-- `retrieval` 节点当前为占位符，仅关键字触发，未接入实际向量数据库
+- `retrieval` 节点已接入本地 Chroma RAG 知识库，命中知识库/文档/检索类输入时会检索 `.agent_knowledge/`

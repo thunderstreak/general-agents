@@ -32,7 +32,7 @@ retrieval → agent → [confirm | tools | error | memory]
 - `tools` — 通过 `tools/runtime.py` 统一执行，含白名单、重试、日志
 - `confirm` — 需确认工具的人工门控
 - `memory` — JSON 文件长期记忆（`memory.py`），提取显式记忆 + 对话摘要
-- `retrieval` — RAG 占位符（仅关键字触发，未完整实现）
+- `retrieval` — 本地 Chroma RAG 检索节点（关键字触发，读取 `.agent_knowledge/`）
 
 ### 工具系统
 

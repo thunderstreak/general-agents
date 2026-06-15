@@ -84,6 +84,6 @@ def confirmation_state(tool_name: str, tool_args: dict[str, Any], tool_call_id: 
 
 
 def should_retrieve(user_text: str) -> bool:
-    """判断是否需要进入 RAG 检索预留节点。"""
+    """判断是否需要进入 RAG 检索节点。"""
     keywords = ("知识库", "文档", "资料库", "内部资料", "根据资料", "检索")
     return any(keyword in user_text for keyword in keywords)

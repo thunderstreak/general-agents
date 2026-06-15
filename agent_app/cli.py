@@ -4,6 +4,15 @@ from agent_app.file_inputs import build_human_message, parse_user_input
 from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
 from agent_app import cli_stream
 from agent_app.graph import get_app, resume_confirmed_tool
+from agent_app.rag import (
+    KnowledgeBaseError,
+    add_document,
+    clear_knowledge_base,
+    delete_document,
+    list_documents,
+    rebuild_knowledge_base,
+    sync_knowledge_base,
+)
 from agent_app.session_store import create_session, delete_session, list_sessions, load_session_state, save_session_state, session_exists
 from agent_app.state import create_initial_state, ensure_state_defaults, reset_turn_state
 
@@ -97,13 +106,17 @@ def _read_user_input() -> str:
 
 
 def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[bool, dict, str, str]:
-    """处理会话管理命令。"""
+    """处理 CLI 命令。"""
     text = user_input.strip()
     if not text.startswith("/"):
         return False, state, session_id, ""
 
     command, _, arg = text.partition(" ")
     arg = arg.strip()
+    if command == "/rag":
+        _handle_rag_command(arg)
+        return True, state, session_id, ""
+
     if command == "/sessions":
         _print_sessions()
         return True, state, session_id, ""
@@ -140,8 +153,114 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
         print(f"确认删除会话 {arg}？请输入 yes 确认，或 no 取消。\n")
         return True, state, session_id, arg
 
-    print("未知命令。可用命令：/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
+    print("未知命令。可用命令：/rag、/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
     return True, state, session_id, ""
+
+
+def _handle_rag_command(arg: str) -> None:
+    """处理 RAG 知识库命令。"""
+    subcommand, _, value = arg.partition(" ")
+    subcommand = subcommand.strip()
+    value = value.strip()
+
+    if subcommand == "add":
+        if not value:
+            print("用法：/rag add <文件路径>\n")
+            return
+        _rag_add(value)
+        return
+
+    if subcommand == "list":
+        _rag_list()
+        return
+
+    if subcommand == "delete":
+        if not value:
+            print("用法：/rag delete <document_id>\n")
+            return
+        _rag_delete(value)
+        return
+
+    if subcommand == "clear":
+        _rag_clear()
+        return
+
+    if subcommand == "sync":
+        _rag_sync()
+        return
+
+    if subcommand == "rebuild":
+        _rag_rebuild()
+        return
+
+    print("RAG 命令：/rag add <文件路径>、/rag list、/rag delete <document_id>、/rag clear、/rag sync、/rag rebuild\n")
+
+
+def _rag_add(path: str) -> None:
+    """导入知识库文档。"""
+    path = path.strip().removeprefix("@").strip("\"'")
+    try:
+        result = add_document(path)
+    except KnowledgeBaseError as exc:
+        print(f"导入失败：{exc}\n")
+        return
+    document = result["document"]
+    status = "已更新" if result["status"] == "updated" else "已导入"
+    if result["status"] == "unchanged":
+        status = "内容未变化"
+    print(f"{status}：{document['document_id']} | {document['title']} | {document['chunk_count']} 个片段\n")
+
+
+def _rag_list() -> None:
+    """打印知识库文档列表。"""
+    documents = list_documents()
+    if not documents:
+        print("知识库暂无文档。\n")
+        return
+
+    print("知识库文档：")
+    for item in documents:
+        print(f"- {item['document_id']} | {item['title']} | {item['chunk_count']} 个片段 | {item['path']}")
+    print()
+
+
+def _rag_delete(document_id: str) -> None:
+    """删除知识库文档。"""
+    if delete_document(document_id):
+        print(f"已删除知识库文档：{document_id}\n")
+    else:
+        print(f"知识库文档不存在：{document_id}\n")
+
+
+def _rag_clear() -> None:
+    """清空知识库。"""
+    count = clear_knowledge_base()
+    print(f"已清空知识库，共删除 {count} 个文档。\n")
+
+
+def _rag_sync() -> None:
+    """同步知识库文档。"""
+    summary = sync_knowledge_base()
+    print(
+        "知识库同步完成："
+        f"检查 {summary['checked']} 个，"
+        f"更新 {summary['updated']} 个，"
+        f"未变化 {summary['unchanged']} 个，"
+        f"缺失 {summary['missing']} 个，"
+        f"失败 {summary['failed']} 个。\n"
+    )
+
+
+def _rag_rebuild() -> None:
+    """重建知识库索引。"""
+    summary = rebuild_knowledge_base()
+    print(
+        "知识库重建完成："
+        f"检查 {summary['checked']} 个，"
+        f"重建 {summary['rebuilt']} 个，"
+        f"缺失 {summary['missing']} 个，"
+        f"失败 {summary['failed']} 个。\n"
+    )
 
 
 def _save_current_session(session_id: str, state: dict) -> None:

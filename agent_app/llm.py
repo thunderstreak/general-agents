@@ -74,7 +74,7 @@ def invoke_with_fallback(messages, tags: list[str] | None = None):
 
 @lru_cache(maxsize=4)
 def get_embedding_model() -> OpenAIEmbeddings:
-    """获取 embedding 模型，为后续 RAG 预留。"""
+    """获取通用 OpenAI embedding 模型。"""
     return OpenAIEmbeddings(
         model=EMBEDDING_MODEL_NAME,
         base_url=BASE_URL,

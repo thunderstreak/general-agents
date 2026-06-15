@@ -131,6 +131,34 @@ class OutputTest(unittest.TestCase):
         self.assertIn("attempted_tools=['fetch_url']", text)
         self.assertIn("reason=timeout", text)
 
+    def test_build_response_includes_rag_source_metadata(self):
+        """输出结构包含 RAG 来源 metadata。"""
+        state = _state("回答内容")
+        state["retrieval_results"] = [
+            {
+                "source": "/tmp/demo.md",
+                "title": "demo.md",
+                "document_id": "doc1",
+                "chunk_id": "chunk1",
+                "chunk_index": 0,
+                "document_version": "v1",
+                "page": "2",
+                "sheet": "Sheet1",
+                "score": 0.8,
+                "vector_score": 0.7,
+                "keyword_score": 0.5,
+            }
+        ]
+
+        response = build_response(state)
+
+        self.assertEqual(response["retrieval_sources"][0]["document_id"], "doc1")
+        self.assertEqual(response["retrieval_sources"][0]["chunk_id"], "chunk1")
+        self.assertEqual(response["retrieval_sources"][0]["page"], "2")
+        self.assertEqual(response["retrieval_sources"][0]["sheet"], "Sheet1")
+        self.assertEqual(response["retrieval_sources"][0]["vector_score"], 0.7)
+        self.assertEqual(response["retrieval_sources"][0]["keyword_score"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

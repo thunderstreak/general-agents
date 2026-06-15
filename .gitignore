@@ -2,5 +2,6 @@
 .agent_memory.json
 .agent_input_history
 .agent_sessions/
+.agent_knowledge/
 __pycache__/
 *.pyc

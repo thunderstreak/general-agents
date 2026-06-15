@@ -129,7 +129,15 @@ def _build_retrieval_sources(retrieval_results: list[dict[str, Any]]) -> list[di
                 "source": item.get("source", ""),
                 "title": item.get("title", ""),
                 "url": item.get("url", ""),
+                "document_id": item.get("document_id", ""),
+                "chunk_id": item.get("chunk_id", ""),
+                "chunk_index": item.get("chunk_index", ""),
+                "document_version": item.get("document_version", ""),
+                "page": item.get("page", ""),
+                "sheet": item.get("sheet", ""),
                 "score": item.get("score", ""),
+                "vector_score": item.get("vector_score", ""),
+                "keyword_score": item.get("keyword_score", ""),
             }
         )
     return sources

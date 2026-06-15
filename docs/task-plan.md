@@ -13,8 +13,8 @@
 | 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；`web_search` 已改为 Tavily Search API；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
 | State 状态管理 | 已完成 | P1 | `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐；state 已包含 `messages`、`tool_selection`、`plan`、`reflection`、`tool_calls` 等字段 | 后续随 RAG 和长期记忆继续扩展字段 |
-| LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；graph/tool selector 已改为延迟初始化模型；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
-| RAG 知识检索 | 未实现 | P2 | 已有 `EMBEDDING_MODEL_NAME`、`get_embedding_model()`、`retrieval_node`、`retrieval_results` 和输出层来源展示预留；尚未实现真实知识库导入、切分、向量化、Chroma 向量库和检索 | 第一版实现本地文件知识库、文本切分、embedding、Chroma vector store、retriever、引用来源输出和 CLI 知识库命令 |
+| LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉模型，并已有 OpenAI embedding 辅助函数；graph/tool selector 已改为延迟初始化模型；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | RAG 第一阶段优先新增本地 HuggingFace embedding；后续可继续补 token/cost 统计 |
+| RAG 知识检索 | 已完成本地 MVP | P2 | 已接入本地文件知识库、`documents.json` 文档 metadata、`chunks.jsonl` chunk metadata、RecursiveCharacterTextSplitter 切分、HuggingFace/OpenAI embedding provider 切换、Chroma 持久化索引、`retrieval_node` 真实检索、基础来源 metadata、来源输出、`/rag` CLI 命令、`/rag sync`、`/rag rebuild`、查询规范化和本地关键词 rerank | 下一阶段补长期记忆语义检索、更完整 hybrid search、LLM query rewrite、专业 reranker 和生产级 metadata 存储 |
 | Memory 记忆 | 已完成但检索弱 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 增加记忆管理命令、隐私策略、长期记忆语义检索和更细粒度存储 |
 | 反思评估 | 已完成基础闭环 | P2 | `reflection_node` 已优先基于结构化工具结果决策，支持结果不足判断、参数缺失追问、临时错误重试、不可重试失败、停止原因、`fetch_url -> web_search` 换工具和 planning 联动；关键词判断仅作旧记录兼容 | 后续增强 LLM Judge、更多工具 fallback 和复杂结果质量判断 |
 | 循环迭代控制 | 已完成基础结构 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；reflection 可路由到 agent/tools/planning/response/error，并记录 retry/stop/loop reason 和 attempted tools | 增加更细的工具级 retry policy 和多步 plan 推进 |
@@ -37,7 +37,7 @@
 |---|---|---|---|
 | 用户输入 | CLI 支持 `prompt_toolkit` 输入、流式输出、文件引用和会话命令 | 尚无统一输入事件结构 | 将文本、文件、会话命令统一封装为输入事件 |
 | 感知理解 | 已有 `perception_node` 输出标准化 `input_context`；`file_inputs/parser.py` 可解析文本、JSON、CSV、PDF、DOCX、XLSX、图片；图片会标记 `requires_vision` | 第一阶段只做本地结构化理解，尚未校验当前模型是否真的支持视觉，也未统一 CLI/API 输入事件 | 增加模型能力校验、输入事件结构和 API 文件输入复用 |
-| 记忆检索 | `with_memory_context()` 注入长期记忆；`retrieval_node` 仅保留 RAG placeholder | 缺少真实 RAG 检索和长期记忆语义检索 | 接入 Chroma retriever，增加 memory semantic search |
+| 记忆检索 | `with_memory_context()` 注入长期记忆；`retrieval_node` 已接入 Chroma 文档 retriever；RAG 支持 sync/rebuild 和本地关键词 rerank | 长期记忆仍是直接注入，不做语义检索；RAG 暂未支持专业 reranker 和 LLM query rewrite | 下一阶段补长期记忆语义检索和更高级检索 |
 | 规划决策 | `planning_node` 优先读取 `input_context.normalized_text` 和 `candidate_tool_names`，使用本地工具意图 gate 生成 `chat/tool_agent` 结构化 plan | 当前仍是单步轻量 planning，不支持多步任务拆解、参数补全和计划推进 | 增强多步 planning，支持低置信度追问和 plan 状态推进 |
 | 工具调用 | `agent_node` 对 `tool_agent` plan 调用绑定工具模型，由模型原生 tool calling 生成 `tool_calls`，router 进入 tools | 当前只支持单轮工具调用和轻量工具模式判断 | 扩展为多工具/多意图计划，支持工具结果聚合 |
 | 执行 | `tool_node()` 调用 `run_tool()`，支持白名单、重试、错误格式和耗时记录 | 工具运行记录未持久化；失败策略较粗 | 持久化 tool runs，增加按错误类型的 retry policy |
@@ -129,18 +129,33 @@
 ### P2：补齐知识与记忆能力
 
 1. RAG 知识检索
-   - [ ] 复用文件解析模块导入本地文档，支持 `.txt`、`.md`、`.json`、`.csv`、`.pdf`、`.docx`、`.xlsx`。
-   - [ ] 增加文本 chunk 切分能力，支持 chunk size 和 overlap 配置。
-   - [ ] 调用 `get_embedding_model()` 将 chunk 向量化。
-   - [ ] 使用 Chroma 作为向量数据库，保存 chunk embedding 和 metadata。
-   - [ ] 增加 Chroma 配置，例如 `CHROMA_PERSIST_DIR=.chroma`、`CHROMA_COLLECTION_NAME=agent_knowledge`。
-   - [ ] 增加 retriever，根据用户问题生成 query embedding 并返回 top_k 相似 chunk。
-   - [ ] 将 `retrieval_node` 的 placeholder 替换为真实检索结果。
-   - [ ] 将检索结果注入模型上下文，回答时要求引用来源。
-   - [ ] 输出层展示文档名、路径、chunk id、score 等来源信息。
-   - [ ] 增加 CLI 知识库维护命令，例如 `rag add @文件路径`、`rag list`、`rag clear`。
-   - [ ] 增加 RAG 测试：导入、切分、检索、无结果回退、来源输出。
-   - [ ] 增加长期记忆语义检索，把相关记忆和 RAG 结果一起注入上下文。
+   - [x] 第一阶段：本地 RAG MVP
+     - [x] 新增依赖：`langchain-chroma`、`chromadb`、`langchain-huggingface`、`sentence-transformers`、`langchain-text-splitters`。
+     - [x] 新增配置：`RAG_ENABLED=true`、`RAG_STORE_DIR=.agent_knowledge`、`CHROMA_PERSIST_DIR=.agent_knowledge/chroma`、`CHROMA_COLLECTION_NAME=agent_knowledge`。
+     - [x] 新增 embedding 配置：`RAG_EMBEDDING_PROVIDER=huggingface|openai`、`RAG_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5`，支持切换 OpenAI embedding。
+     - [x] 新增 chunk 配置：`RAG_CHUNK_SIZE=800`、`RAG_CHUNK_OVERLAP=120`、`RAG_TOP_K=4`。
+     - [x] 复用文件解析模块导入本地文档，支持 `.txt`、`.md`、`.json`、`.csv`、`.pdf`、`.docx`、`.xlsx`。
+     - [x] 使用 `RecursiveCharacterTextSplitter` 切分文本，生成稳定 `document_id`、`chunk_id`、`chunk_index` 和 `content_hash`。
+     - [x] 使用 HuggingFaceEmbeddings 将 chunk 向量化，写入 Chroma，并保存 chunk metadata。
+     - [x] 使用 `.agent_knowledge/documents.json` 保存文档级 metadata，包括路径、hash、标题、导入时间、chunk 数量和 active 状态。
+     - [x] 使用 `.agent_knowledge/chunks.jsonl` 保存 chunk 业务 metadata，便于人工查看和后续迁移到 SQLite。
+     - [x] 将 `retrieval_node` 的 placeholder 替换为真实 Chroma 检索，写入 `retrieval_results`。
+     - [x] 复用 `agent_node.with_context()` 注入检索上下文，回答时要求引用来源。
+     - [x] 复用输出层来源展示，显示文档名、路径、chunk id、score 等基础来源信息。
+     - [x] 增加 CLI 知识库维护命令：`/rag add <文件路径>`、`/rag list`、`/rag delete <document_id>`、`/rag clear`。
+     - [x] 增加 RAG 测试：文档导入、hash 去重、切分、Chroma 写入、检索、无结果回退、来源输出和 CLI 命令。
+   - [x] 第二阶段：知识更新与同步
+     - [x] 增加 `/rag sync`，根据文件路径和 content hash 检测变更。
+     - [x] 增加 `/rag rebuild`，清空并重建 Chroma 索引。
+     - [x] 文档更新时删除旧 chunk vectors，再重新切分、embedding 和写入。
+     - [x] 增强来源 metadata：页码、sheet 名、chunk id、score 和文档版本。
+   - [ ] 第三阶段：生产化存储
+     - [ ] 评估 SQLite 保存 RAG 文档和 chunk 业务 metadata；Chroma 只保存向量和最小 metadata。
+     - [ ] 增加 schema migration、多用户/多知识库隔离、数据清理和索引一致性检查。
+   - [ ] 第四阶段：高级检索
+     - [ ] 增加长期记忆语义检索，把相关 memory 和 RAG 结果一起注入上下文。
+     - [x] 增加查询规范化、本地 keyword boost 和轻量 rerank。
+     - [ ] 增加更完整 hybrid search、专业 reranker、LLM query rewrite 和多文档引用格式优化。
 
 2. 长期 Memory
    - [x] 增加用户画像和历史摘要存储。
@@ -156,7 +171,7 @@
    - [x] 增加失败分支。
    - [x] 为人工确认节点预留接口。
    - [x] 增加循环保护和统一输出节点。
-   - [ ] 接入真实 RAG 检索链路。
+   - [x] 接入真实 RAG 检索链路。
    - [x] 接入 `planning_node`，让普通回答和工具 agent 模式来自结构化计划。
    - [ ] 增强 `planning_node`，让追问、多步任务和参数补全也来自结构化计划。
    - [x] 接入轻量 `reflection_node`，检查工具结果是否失败。
@@ -173,8 +188,9 @@
    - [x] 支持 CLI 手动 `/sessions`、`/resume`、`/new`、`/delete`、`/current`。
    - [ ] 评估是否仍需要 SQLite 保存生产级 session/messages/tool runs。
    - [ ] 增加 `memory_items` 表，替代或兼容当前 `.agent_memory.json`，支持按用户/会话隔离长期记忆。
-   - [ ] 增加 `documents` 表，保存 RAG 文档 id、文件名、路径、hash、导入时间和 metadata。
-   - [ ] 增加 `document_chunks` 表，保存 chunk id、document id、内容、顺序、token 估算和 metadata。
+   - [x] RAG 第一版使用 `.agent_knowledge/documents.json` 和 `.agent_knowledge/chunks.jsonl` 保存文档/chunk metadata，Chroma 保存向量和检索 metadata。
+   - [ ] 生产化阶段再增加 `documents` 表，保存 RAG 文档 id、文件名、路径、hash、导入时间和 metadata。
+   - [ ] 生产化阶段再增加 `document_chunks` 表，保存 chunk id、document id、内容、顺序、token 估算和 metadata。
    - [ ] RAG 向量索引使用 Chroma；SQLite 只保存文档和 chunk 业务元数据，以及 Chroma collection/chunk id 的映射关系。
    - [ ] 增加 `tool_runs` 表，保存工具名、参数、结果、成功/失败、耗时和错误信息。
    - [ ] 增加 `node_runs` 表，保存 `trace_id`、节点名、耗时、成功/失败和错误信息。
@@ -223,6 +239,6 @@
 
 当前项目已经具备一个 LangGraph Agent 原型的核心骨架：LLM、工具调用、短期记忆、长期记忆、文件夹式会话历史、流式 CLI、基础 Perception、结构化 Planning 第一阶段和基础编排已经可用。
 
-当前链路里的感知理解已从分散在 CLI、retrieval 和 planning 中的隐式判断，整理为 `perception -> retrieval -> planning -> agent` 的显式链路；工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool agent 模式；反思评估已从关键词规则升级为结构化工具结果驱动，并支持结果质检、追问、重试、换工具和多路由，但仍缺少 LLM Judge、更多工具 fallback 和复杂结果质量判断。RAG 仍是 placeholder，循环迭代仍需要更细的工具级 retry policy 和多步计划推进。
+当前链路里的感知理解已从分散在 CLI、retrieval 和 planning 中的隐式判断，整理为 `perception -> retrieval -> planning -> agent` 的显式链路；工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool agent 模式；反思评估已从关键词规则升级为结构化工具结果驱动，并支持结果质检、追问、重试、换工具和多路由。RAG 已完成本地文件知识库 MVP、知识更新同步、基础来源 metadata、查询规范化和本地关键词 rerank，但仍缺少长期记忆语义检索、更完整 hybrid search、专业 reranker、LLM query rewrite 和生产级 metadata 存储；循环迭代仍需要更细的工具级 retry policy 和多步计划推进。
 
 距离完整 agentic workflow 还需要补齐多步规划、结构化反思、真实知识检索、记忆语义检索、循环决策、工具/trace 持久化和更强可观测性。

@@ -99,6 +99,49 @@ class CliSessionCommandTest(unittest.TestCase):
         self.assertEqual(result["reflection"], {})
         self.assertEqual(result["retrieval_results"], [])
 
+    def test_rag_list_command(self):
+        """`/rag list` 打印知识库文档。"""
+        with patch("agent_app.cli.list_documents", return_value=[{"document_id": "doc1", "title": "demo.md", "chunk_count": 2, "path": "/tmp/demo.md"}]):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/rag list", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("doc1", buffer.getvalue())
+
+    def test_rag_add_command(self):
+        """`/rag add` 导入知识库文档。"""
+        document = {"document_id": "doc1", "title": "demo.md", "chunk_count": 2}
+        with patch("agent_app.cli.add_document", return_value={"status": "added", "document": document}):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/rag add demo.md", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("已导入", buffer.getvalue())
+
+    def test_rag_sync_command(self):
+        """`/rag sync` 同步知识库。"""
+        summary = {"checked": 1, "updated": 1, "unchanged": 0, "missing": 0, "failed": 0}
+        with patch("agent_app.cli.sync_knowledge_base", return_value=summary):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/rag sync", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("知识库同步完成", buffer.getvalue())
+
+    def test_rag_rebuild_command(self):
+        """`/rag rebuild` 重建知识库索引。"""
+        summary = {"checked": 1, "rebuilt": 1, "missing": 0, "failed": 0}
+        with patch("agent_app.cli.rebuild_knowledge_base", return_value=summary):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/rag rebuild", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("知识库重建完成", buffer.getvalue())
+
 
 def _patch_store_dir(tmp_dir: str):
     """patch CLI 和 store 使用临时目录。"""

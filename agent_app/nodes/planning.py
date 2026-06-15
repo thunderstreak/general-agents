@@ -46,6 +46,8 @@ def planning_selection(user_text: str, has_user_message: bool, input_context: di
     """根据本地 gate 生成规划选择。"""
     if not has_user_message:
         return ToolSelection(action="auto", reason="没有找到用户消息")
+    if (input_context or {}).get("should_retrieve"):
+        return ToolSelection(action="chat", confidence=1.0, reason="本地判断：使用知识库检索上下文回答")
     candidate_tool_names = (input_context or {}).get("candidate_tool_names")
     if should_enter_tool_mode(user_text) or candidate_tool_names:
         return tool_agent_selection(user_text, candidate_tool_names)

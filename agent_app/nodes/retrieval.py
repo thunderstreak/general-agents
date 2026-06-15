@@ -4,12 +4,13 @@ import time
 
 from agent_app.nodes.common import emit_progress, latest_human_message, node_run
 from agent_app.orchestrator import new_trace_id, should_retrieve
+from agent_app.rag import search_knowledge
 from agent_app.state import AgentState
 from agent_app.utils.messages import message_text
 
 
 def retrieval_node(state: AgentState):
-    """RAG 检索预留节点。"""
+    """执行 RAG 知识检索。"""
     start_time = time.perf_counter()
     trace_id = state.get("trace_id") or new_trace_id()
     latest_message = latest_human_message(state["messages"])
@@ -17,15 +18,9 @@ def retrieval_node(state: AgentState):
     user_text = input_context.get("normalized_text") or message_text(latest_message)
 
     retrieval_results = []
-    if should_retrieve(user_text):
+    if input_context.get("should_retrieve") or should_retrieve(user_text):
         emit_progress("检索中...", node="retrieval")
-        retrieval_results.append(
-            {
-                "source": "local_rag_placeholder",
-                "content": "RAG 检索模块尚未接入，当前仅保留编排节点和结果结构。",
-                "score": 0.0,
-            }
-        )
+        retrieval_results = search_knowledge(user_text)
 
     return {
         "trace_id": trace_id,

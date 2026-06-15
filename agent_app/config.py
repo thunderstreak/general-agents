@@ -34,6 +34,20 @@ MEMORY_MAX_ITEMS = int(os.getenv("MEMORY_MAX_ITEMS", "50"))
 
 ORCHESTRATOR_MAX_STEPS = int(os.getenv("ORCHESTRATOR_MAX_STEPS", "8"))
 
+RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() in {"1", "true", "yes", "y"}
+RAG_STORE_DIR = os.getenv("RAG_STORE_DIR", ".agent_knowledge")
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", ".agent_knowledge/chroma")
+CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "agent_knowledge")
+RAG_EMBEDDING_PROVIDER = os.getenv("RAG_EMBEDDING_PROVIDER", "huggingface")
+RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+RAG_EMBEDDING_BASE_URL = os.getenv("RAG_EMBEDDING_BASE_URL", BASE_URL or "")
+RAG_EMBEDDING_API_KEY = os.getenv("RAG_EMBEDDING_API_KEY", OPENAI_API_KEY)
+RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
+RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "120"))
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "4"))
+RAG_CANDIDATE_K = int(os.getenv("RAG_CANDIDATE_K", str(max(RAG_TOP_K * 3, RAG_TOP_K))))
+RAG_KEYWORD_WEIGHT = float(os.getenv("RAG_KEYWORD_WEIGHT", "0.2"))
+
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 WEB_SEARCH_MAX_RESULTS = int(os.getenv("WEB_SEARCH_MAX_RESULTS", "5"))
 WEB_SEARCH_SEARCH_DEPTH = os.getenv("WEB_SEARCH_SEARCH_DEPTH", "basic")

@@ -12,7 +12,7 @@
 - 支持天气、IP 定位、网页搜索、URL 内容抓取等工具调用。
 - 支持本地长期记忆，默认写入 `.agent_memory.json`。
 - 支持通过 `@文件路径` 读取文本、图片、PDF、DOCX、XLSX、CSV、JSON 等文件输入。
-- 保留 RAG（Retrieval-Augmented Generation，检索增强生成）节点结构，当前为占位实现。
+- 支持本地 RAG（Retrieval-Augmented Generation，检索增强生成）知识库，使用 Chroma、HuggingFaceEmbeddings 和 RecursiveCharacterTextSplitter。
 - CLI 默认支持流式输出，并可显示检索、工具调用、记忆更新等节点进度。
 - 支持调试输出 trace、节点耗时、工具摘要和错误详情。
 
@@ -151,13 +151,26 @@ URL 内容抓取：
 | `CHAT_MODEL_NAME` | 否 | `MODEL_NAME` | 主聊天模型，用于普通对话和工具结果总结。 |
 | `TOOL_SELECTOR_MODEL_NAME` | 否 | `MODEL_NAME` | 工具选择模型，用于判断是否调用工具以及生成工具参数。 |
 | `VISION_MODEL_NAME` | 否 | `MODEL_NAME` | 多模态视觉模型，用于图片输入。模型和服务需要支持图片。 |
-| `EMBEDDING_MODEL_NAME` | 否 | `text-embedding-3-small` | Embedding 模型，为后续 RAG 检索预留。 |
+| `EMBEDDING_MODEL_NAME` | 否 | `text-embedding-3-small` | OpenAI embedding 辅助函数使用的模型。当前本地 RAG 第一版默认使用 `RAG_EMBEDDING_MODEL`。 |
 | `FALLBACK_MODEL_NAME` | 否 | 空 | 备用模型。主聊天模型失败时使用，留空表示不启用。 |
 | `MODEL_TIMEOUT_SECONDS` | 否 | `60` | 模型请求超时时间，单位秒。 |
 | `MODEL_MAX_RETRIES` | 否 | `2` | 模型请求失败后的最大重试次数。 |
 | `MEMORY_FILE_PATH` | 否 | `.agent_memory.json` | 长期记忆本地 JSON 文件路径。 |
 | `MEMORY_MAX_ITEMS` | 否 | `50` | 最多保留的长期记忆条数。 |
 | `ORCHESTRATOR_MAX_STEPS` | 否 | `8` | 单轮编排最多进入 agent/tool 节点的次数，用于避免工具循环。 |
+| `RAG_ENABLED` | 否 | `true` | 是否开启本地 RAG 知识检索。 |
+| `RAG_STORE_DIR` | 否 | `.agent_knowledge` | RAG 知识库根目录。 |
+| `CHROMA_PERSIST_DIR` | 否 | `.agent_knowledge/chroma` | Chroma 向量索引持久化目录。 |
+| `CHROMA_COLLECTION_NAME` | 否 | `agent_knowledge` | Chroma collection 名称。 |
+| `RAG_EMBEDDING_PROVIDER` | 否 | `huggingface` | RAG embedding 提供方，支持 `huggingface` 或 `openai`。本地 OpenAI-compatible embedding 服务请设为 `openai`。 |
+| `RAG_EMBEDDING_MODEL` | 否 | `BAAI/bge-small-zh-v1.5` | RAG embedding 模型名。provider 为 `openai` 时填写服务端模型名。 |
+| `RAG_EMBEDDING_BASE_URL` | 否 | `BASE_URL` | RAG embedding OpenAI-compatible 服务地址，可单独指向本地 LM 服务。 |
+| `RAG_EMBEDDING_API_KEY` | 否 | `OPENAI_API_KEY` | RAG embedding API key。本地服务不校验时可填任意非空值。 |
+| `RAG_CHUNK_SIZE` | 否 | `800` | RAG 文本切分 chunk 大小。 |
+| `RAG_CHUNK_OVERLAP` | 否 | `120` | RAG 文本切分 overlap 大小。 |
+| `RAG_TOP_K` | 否 | `4` | 每次 RAG 检索返回的最多 chunk 数量。 |
+| `RAG_CANDIDATE_K` | 否 | `12` | 向量检索候选数量，候选会经过本地关键词加权 rerank 后再截取。 |
+| `RAG_KEYWORD_WEIGHT` | 否 | `0.2` | RAG 本地关键词加权权重，用于 hybrid keyword boost。 |
 | `TAVILY_API_KEY` | 否 | 空 | Tavily Search API key。使用 `web_search` 工具时需要配置。 |
 | `WEB_SEARCH_MAX_RESULTS` | 否 | `5` | Tavily 每次搜索最多返回的结果数量。 |
 | `WEB_SEARCH_SEARCH_DEPTH` | 否 | `basic` | Tavily 搜索深度，可选 `basic` 或 `advanced`。 |
@@ -232,7 +245,7 @@ CLI 渲染输出
 ### LangGraph 节点说明
 
 - `perception`：统一提取本轮用户输入上下文，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 信号和候选工具名。
-- `retrieval`：RAG 检索预留节点。命中“知识库、文档、检索”等关键词时写入占位检索结果。
+- `retrieval`：RAG 检索节点。命中“知识库、文档、检索”等关键词时，从本地 Chroma 知识库检索相关片段并写入 `retrieval_results`。
 - `planning`：使用本地工具意图 gate 生成结构化 `plan`；普通对话生成 `chat` plan，明确工具/实时/RAG/文件/记忆意图生成 `tool_agent` plan。
 - `agent`：读取 `plan` 决定普通聊天，或使用绑定工具的模型生成原生 `tool_calls`。
 - `confirm`：处理需要人工确认的工具调用。当前注册工具默认不需要确认。
@@ -281,6 +294,50 @@ CLI 支持在用户输入中使用 `@文件路径` 引用本地文件。
 ```
 
 图片会以多模态输入发送给模型，因此 `VISION_MODEL_NAME` 对应的模型和 API 服务必须支持图片输入。
+
+## RAG 知识库
+
+本地 RAG 知识库默认写入：
+
+```text
+.agent_knowledge/
+```
+
+其中 `documents.json` 保存文档级 metadata，`chunks.jsonl` 保存可读的 chunk 业务 metadata，`chroma/` 保存 Chroma 向量索引。该目录已加入 `.gitignore`，不会提交到仓库。
+
+可用命令：
+
+```text
+/rag add <文件路径>
+/rag list
+/rag delete <document_id>
+/rag clear
+/rag sync
+/rag rebuild
+```
+
+示例：
+
+```text
+你: /rag add docs/task-plan.md
+你: /rag list
+你: 根据知识库回答 LangGraph Agent 当前还有哪些任务
+```
+
+第一版 RAG 支持导入 `.txt`、`.md`、`.json`、`.csv`、`.pdf`、`.docx`、`.xlsx`。图片文件仍走多模态输入，不写入文本知识库。
+
+当源文件内容变化后，可以使用 `/rag sync` 根据 content hash 同步变更；如果需要清空并重新创建 Chroma 索引，可以使用 `/rag rebuild`。
+
+检索时会先从 Chroma 取候选片段，再使用本地关键词命中做轻量 rerank；输出来源中包含 `score`、`vector_score`、`keyword_score`、`chunk_id`、页码或 sheet 等 metadata。
+
+如果使用本地 OpenAI-compatible embedding 服务，例如 LM Studio 的 `/v1/embeddings`，可以这样配置：
+
+```dotenv
+RAG_EMBEDDING_PROVIDER=openai
+RAG_EMBEDDING_MODEL=text-embedding-bge-small-zh-v1.5
+RAG_EMBEDDING_BASE_URL=http://127.0.0.1:1234/v1
+RAG_EMBEDDING_API_KEY=not-needed
+```
 
 ## 长期记忆
 
@@ -351,6 +408,7 @@ python scripts/check_tool_selector_examples.py
 ## 开发说明
 
 - `agent_app/graph.py` 负责 LangGraph 图构建和路由；`agent_app/nodes/` 按 perception、retrieval、planning、agent、tools、reflection 等领域拆分节点实现。模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
+- `agent_app/rag/` 负责本地知识库导入、文档 metadata、文本切分、Chroma 写入和检索。
 - `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 state reset 和旧会话默认值补齐。
 - `agent_app/utils/` 存放通用 helper；其中 `utils/messages.py` 提供 LangChain message 文本提取，避免各模块重复解析消息结构。
 - `agent_app/cli.py` 保留 CLI 主循环、输入读取和会话命令；`agent_app/cli_stream.py` 负责流式 chunk 解析、进度输出和 debug 尾部渲染。

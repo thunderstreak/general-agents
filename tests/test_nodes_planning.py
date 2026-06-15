@@ -83,6 +83,21 @@ class PlanningNodeTest(unittest.TestCase):
         self.assertEqual(result["plan"]["mode"], "tool_agent")
         self.assertEqual(result["plan"]["candidate_tool_names"], ["web_search"])
 
+    def test_planning_node_uses_chat_plan_for_rag_context(self):
+        """RAG 命中时直接使用检索上下文回答，不进入工具 agent。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="根据知识库回答：chunks.jsonl 是做什么的？")]
+        state["input_context"] = {
+            "normalized_text": "根据知识库回答：chunks.jsonl 是做什么的？",
+            "should_retrieve": True,
+            "candidate_tool_names": [],
+        }
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "chat")
+        self.assertEqual(result["plan"]["decision_reason"], "本地判断：使用知识库检索上下文回答")
+
     def test_planning_node_multilingual_chat_skips_tool_selector(self):
         """多语言普通问候直接 chat。"""
         state = base_state()
