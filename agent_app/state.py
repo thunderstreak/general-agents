@@ -14,6 +14,7 @@ class AgentState(TypedDict):
     """LangGraph 运行状态。"""
 
     messages: Annotated[list, add_messages]  # LangGraph 会自动追加消息
+    input_context: dict
     tool_selection: dict
     plan: dict
     reflection: dict
@@ -40,6 +41,7 @@ def create_initial_state(**overrides: Any) -> dict[str, Any]:
     memory = load_memory()
     state: dict[str, Any] = {
         "messages": [],
+        "input_context": {},
         "tool_selection": {},
         "plan": {},
         "reflection": {},
@@ -69,6 +71,7 @@ def reset_turn_state(state: dict[str, Any]) -> dict[str, Any]:
     state["step_count"] = 0
     state["max_steps"] = ORCHESTRATOR_MAX_STEPS
     state["last_error"] = {}
+    state["input_context"] = {}
     state["plan"] = {}
     state["reflection"] = {}
     state["last_tool_request"] = {}

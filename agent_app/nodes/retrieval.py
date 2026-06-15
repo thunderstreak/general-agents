@@ -13,7 +13,8 @@ def retrieval_node(state: AgentState):
     start_time = time.perf_counter()
     trace_id = state.get("trace_id") or new_trace_id()
     latest_message = latest_human_message(state["messages"])
-    user_text = message_text(latest_message)
+    input_context = state.get("input_context") or {}
+    user_text = input_context.get("normalized_text") or message_text(latest_message)
 
     retrieval_results = []
     if should_retrieve(user_text):

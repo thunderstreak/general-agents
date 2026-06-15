@@ -72,6 +72,17 @@ class PlanningNodeTest(unittest.TestCase):
 
         self.assertEqual(result["plan"]["candidate_tool_names"], ["get_weather"])
 
+    def test_planning_node_prefers_input_context_candidates(self):
+        """planning 优先使用 perception 生成的候选工具。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="你好")]
+        state["input_context"] = {"normalized_text": "你好", "candidate_tool_names": ["web_search"]}
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "tool_agent")
+        self.assertEqual(result["plan"]["candidate_tool_names"], ["web_search"])
+
     def test_planning_node_multilingual_chat_skips_tool_selector(self):
         """多语言普通问候直接 chat。"""
         state = base_state()

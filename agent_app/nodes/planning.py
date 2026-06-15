@@ -30,9 +30,10 @@ def planning_node(state: AgentState):
         }
 
     latest_message = latest_human_message(state["messages"])
-    user_text = message_text(latest_message)
+    input_context = state.get("input_context") or {}
+    user_text = input_context.get("normalized_text") or message_text(latest_message)
 
-    selection = planning_selection(user_text, bool(latest_message))
+    selection = planning_selection(user_text, bool(latest_message), input_context)
     plan = selection_to_plan(selection)
     return {
         "tool_selection": selection.to_dict(),
@@ -41,12 +42,13 @@ def planning_node(state: AgentState):
     }
 
 
-def planning_selection(user_text: str, has_user_message: bool) -> ToolSelection:
+def planning_selection(user_text: str, has_user_message: bool, input_context: dict | None = None) -> ToolSelection:
     """根据本地 gate 生成规划选择。"""
     if not has_user_message:
         return ToolSelection(action="auto", reason="没有找到用户消息")
-    if should_enter_tool_mode(user_text):
-        return tool_agent_selection(user_text)
+    candidate_tool_names = (input_context or {}).get("candidate_tool_names")
+    if should_enter_tool_mode(user_text) or candidate_tool_names:
+        return tool_agent_selection(user_text, candidate_tool_names)
     return ToolSelection(action="chat", confidence=1.0, reason="本地判断：普通对话")
 
 
@@ -90,9 +92,9 @@ def plan_intent(selection: ToolSelection) -> str:
     return "auto"
 
 
-def tool_agent_selection(user_text: str) -> ToolSelection:
+def tool_agent_selection(user_text: str, candidate_tool_names: list[str] | None = None) -> ToolSelection:
     """生成 tool-agent 选择结果，并记录本轮候选工具。"""
-    candidate_tool_names = candidate_tool_names_for_text(user_text)
+    candidate_tool_names = candidate_tool_names if candidate_tool_names is not None else candidate_tool_names_for_text(user_text)
     return ToolSelection(
         action="auto",
         args={"_candidate_tool_names": candidate_tool_names},

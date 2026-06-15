@@ -4,7 +4,7 @@ import unittest
 
 from langchain_core.messages import AIMessage, ToolCall
 
-from agent_app.graph import after_reflection_router, after_tool_router, router
+from agent_app.graph import after_reflection_router, after_tool_router, build_graph, perception_node, router
 from tests.helpers import base_state
 
 
@@ -46,6 +46,11 @@ class GraphRouterTest(unittest.TestCase):
         state["last_error"] = {"message": "失败"}
 
         self.assertEqual(after_reflection_router(state), "error")
+
+    def test_graph_exports_perception_and_compiles(self):
+        """图包含 perception 入口节点并可编译。"""
+        self.assertTrue(callable(perception_node))
+        self.assertIsNotNone(build_graph())
 
 
 if __name__ == "__main__":

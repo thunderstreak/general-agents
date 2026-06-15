@@ -39,6 +39,16 @@ class RetrievalNodeTest(unittest.TestCase):
 
         emit_progress.assert_called_once_with("检索中...", node="retrieval")
 
+    def test_retrieval_node_prefers_input_context_text(self):
+        """retrieval 优先使用 perception 生成的 normalized_text。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="你好")]
+        state["input_context"] = {"normalized_text": "根据知识库回答 LangGraph 是什么"}
+
+        result = retrieval_node(state)
+
+        self.assertEqual(result["retrieval_results"][0]["source"], "local_rag_placeholder")
+
 
 if __name__ == "__main__":
     unittest.main()

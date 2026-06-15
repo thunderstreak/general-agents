@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agent_app.file_inputs import parser
+from agent_app.file_inputs import FileParseResult, parser
 
 
 class FileInputsTest(unittest.TestCase):
@@ -52,6 +52,27 @@ class FileInputsTest(unittest.TestCase):
         self.assertEqual(result.kind, "text")
         self.assertEqual(result.content, "你好")
         self.assertEqual(result.error, "")
+
+    def test_to_dict_returns_json_friendly_fields(self):
+        """to_dict 返回可 JSON 化字段。"""
+        result = FileParseResult(
+            path="docs/task-plan.md",
+            kind="text",
+            content="内容",
+            data_url="data:text/plain;base64,AAAA",
+            error="",
+        )
+
+        self.assertEqual(
+            result.to_dict(),
+            {
+                "path": "docs/task-plan.md",
+                "kind": "text",
+                "content": "内容",
+                "data_url": "data:text/plain;base64,AAAA",
+                "error": "",
+            },
+        )
 
 
 if __name__ == "__main__":

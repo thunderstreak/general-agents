@@ -30,6 +30,16 @@ class FileParseResult:
     data_url: str = ""
     error: str = ""
 
+    def to_dict(self) -> dict:
+        """转换为 JSON 友好的字典。"""
+        return {
+            "path": self.path,
+            "kind": self.kind,
+            "content": self.content,
+            "data_url": self.data_url,
+            "error": self.error,
+        }
+
 
 def parse_user_input(user_input: str) -> tuple[str, list[FileParseResult]]:
     """解析用户输入中的 @文件路径。"""

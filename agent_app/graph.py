@@ -9,6 +9,7 @@ from agent_app.nodes import (
     confirmation_node,
     error_node,
     memory_node,
+    perception_node,
     planning_node,
     reflection_node,
     response_node,
@@ -66,6 +67,7 @@ def after_memory_router(state: AgentState) -> Literal["response", "error"]:
 def build_graph():
     """构建并编译 LangGraph。"""
     workflow = StateGraph(AgentState)
+    workflow.add_node("perception", perception_node)
     workflow.add_node("retrieval", retrieval_node)
     workflow.add_node("planning", planning_node)
     workflow.add_node("agent", agent_node)
@@ -75,7 +77,8 @@ def build_graph():
     workflow.add_node("memory", memory_node)
     workflow.add_node("error", error_node)
     workflow.add_node("response", response_node)
-    workflow.set_entry_point("retrieval")
+    workflow.set_entry_point("perception")
+    workflow.add_edge("perception", "retrieval")
     workflow.add_edge("retrieval", "planning")
     workflow.add_edge("planning", "agent")
     workflow.add_conditional_edges("agent", router, {"confirm": "confirm", "tools": "tools", "error": "error", "memory": "memory"})

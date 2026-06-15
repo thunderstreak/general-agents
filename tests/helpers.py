@@ -7,6 +7,7 @@ def base_state() -> dict:
     """构造基础 AgentState。"""
     return {
         "messages": [HumanMessage(content="你好")],
+        "input_context": {},
         "tool_selection": {},
         "plan": {},
         "reflection": {},

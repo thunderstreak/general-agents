@@ -8,7 +8,7 @@
 | 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、graph、nodes、output、CLI stream、CLI session、session store、CLI input、state、message utils 等基础行为；节点测试已按领域拆分 | 增加模型 mock、工具 mock、工具选择样例自动化、端到端测试 |
 | 日志与可观测性 | 已实现但功能不全 | P0 | 编排层已记录 `trace_id`、节点运行耗时和成功/失败状态；CLI 流式输出可展示节点进度 | 增加 structured logging、token/cost 统计、工具输入输出持久化记录、loop/stop reason |
 | 安全与权限 | 未实现 | P0 | 工具可直接调用外部接口 | 增加工具白名单、敏感操作确认、API key 保护、输入过滤 |
-| 感知理解 | 已实现但分散 | P1 | CLI 支持文本输入和 `@文件路径`，文件解析模块支持文本、文档、表格、图片输入 | 增加统一 perception 节点，规范输入解析结果、附件元数据和多模态能力判断 |
+| 感知理解 | 已完成基础节点 | P1 | 已新增 `perception_node`，统一生成 `input_context`，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 触发信号和候选工具名；CLI 仍负责 `@文件路径` 解析 | 后续增加模型能力校验、输入事件结构、API 文件输入复用和更细多模态判断 |
 | Prompt 管理 | 已完成 | P1 | 工具选择 prompt 已拆分到 `agent_app/prompts/`，并提供样例文件；历史 Intent Router prompt 已清理 | 后续可继续增加版本管理和环境区分 |
 | 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
@@ -36,9 +36,9 @@
 | 阶段 | 当前实现 | 缺口 | 后续任务 |
 |---|---|---|---|
 | 用户输入 | CLI 支持 `prompt_toolkit` 输入、流式输出、文件引用和会话命令 | 尚无统一输入事件结构 | 将文本、文件、会话命令统一封装为输入事件 |
-| 感知理解 | `file_inputs/parser.py` 可解析文本、JSON、CSV、PDF、DOCX、XLSX、图片 | 没有独立 perception 节点；附件能力和模型能力未统一校验 | 增加 `perception_node`，输出标准化 `input_context` 和附件元数据 |
+| 感知理解 | 已有 `perception_node` 输出标准化 `input_context`；`file_inputs/parser.py` 可解析文本、JSON、CSV、PDF、DOCX、XLSX、图片；图片会标记 `requires_vision` | 第一阶段只做本地结构化理解，尚未校验当前模型是否真的支持视觉，也未统一 CLI/API 输入事件 | 增加模型能力校验、输入事件结构和 API 文件输入复用 |
 | 记忆检索 | `with_memory_context()` 注入长期记忆；`retrieval_node` 仅保留 RAG placeholder | 缺少真实 RAG 检索和长期记忆语义检索 | 接入 Chroma retriever，增加 memory semantic search |
-| 规划决策 | `planning_node` 使用本地工具意图 gate 生成 `chat/tool_agent` 结构化 plan | 当前仍是单步轻量 planning，不支持多步任务拆解、参数补全和计划推进 | 增强多步 planning，支持低置信度追问和 plan 状态推进 |
+| 规划决策 | `planning_node` 优先读取 `input_context.normalized_text` 和 `candidate_tool_names`，使用本地工具意图 gate 生成 `chat/tool_agent` 结构化 plan | 当前仍是单步轻量 planning，不支持多步任务拆解、参数补全和计划推进 | 增强多步 planning，支持低置信度追问和 plan 状态推进 |
 | 工具调用 | `agent_node` 对 `tool_agent` plan 调用绑定工具模型，由模型原生 tool calling 生成 `tool_calls`，router 进入 tools | 当前只支持单轮工具调用和轻量工具模式判断 | 扩展为多工具/多意图计划，支持工具结果聚合 |
 | 执行 | `tool_node()` 调用 `run_tool()`，支持白名单、重试、错误格式和耗时记录 | 工具运行记录未持久化；失败策略较粗 | 持久化 tool runs，增加按错误类型的 retry policy |
 | 反思 | 工具后进入 `reflection_node`，优先读取 ToolRunRecord 的 `result_status/error_type/is_retryable/fallback_tool_names/missing_info` 决定总结、重试、追问、换工具或失败 | 暂未支持 LLM Judge 和复杂质量判断 | 增强更多工具 fallback、重新规划策略和复杂结果质量评估 |
@@ -104,6 +104,7 @@
    - [x] 扩展 `AgentState`，保存工具选择、工具调用、工具错误、检索结果、用户画像等结构化状态。
    - [x] 扩展 `AgentState`，保存 planning 结构。
    - [x] 扩展 `AgentState`，保存 reflection 结构。
+   - [x] 扩展 `AgentState`，保存单轮 `input_context` 感知结果。
    - [x] 将 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐集中到 `agent_app/state.py`。
    - [ ] 扩展 `AgentState`，保存 loop reason 和 stop reason。
 
@@ -148,6 +149,7 @@
    - [ ] 增加语义检索和数据库存储。
 
 3. Orchestrator 编排层
+   - [x] 增加 `perception_node`，作为图入口统一整理输入上下文。
    - [x] 增加 RAG 预留节点。
    - [x] 增加 memory 写入节点。
    - [x] 增加失败分支。
@@ -218,8 +220,8 @@
 
 ## 当前结论
 
-当前项目已经具备一个 LangGraph Agent 原型的核心骨架：LLM、工具调用、短期记忆、长期记忆、文件夹式会话历史、流式 CLI、结构化 Planning 第一阶段和基础编排已经可用。
+当前项目已经具备一个 LangGraph Agent 原型的核心骨架：LLM、工具调用、短期记忆、长期记忆、文件夹式会话历史、流式 CLI、基础 Perception、结构化 Planning 第一阶段和基础编排已经可用。
 
-当前链路里的工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool agent 模式；反思评估已从关键词规则升级为结构化工具结果驱动，并支持结果质检、追问、重试、换工具和多路由，但仍缺少 LLM Judge、更多工具 fallback 和复杂结果质量判断。RAG 仍是 placeholder，循环迭代仍需要更细的工具级 retry policy 和多步计划推进。
+当前链路里的感知理解已从分散在 CLI、retrieval 和 planning 中的隐式判断，整理为 `perception -> retrieval -> planning -> agent` 的显式链路；工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool agent 模式；反思评估已从关键词规则升级为结构化工具结果驱动，并支持结果质检、追问、重试、换工具和多路由，但仍缺少 LLM Judge、更多工具 fallback 和复杂结果质量判断。RAG 仍是 placeholder，循环迭代仍需要更细的工具级 retry policy 和多步计划推进。
 
 距离完整 agentic workflow 还需要补齐多步规划、结构化反思、真实知识检索、记忆语义检索、循环决策、工具/trace 持久化和更强可观测性。

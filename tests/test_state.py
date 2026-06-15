@@ -19,6 +19,7 @@ class AgentStateTest(unittest.TestCase):
             state = create_initial_state()
 
         self.assertEqual(state["messages"], [])
+        self.assertEqual(state["input_context"], {})
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["reflection"], {})
         self.assertEqual(state["last_tool_request"], {})
@@ -30,6 +31,7 @@ class AgentStateTest(unittest.TestCase):
         """重置单轮字段但保留历史消息和长期记忆。"""
         state = create_initial_state(
             messages=[HumanMessage(content="你好")],
+            input_context={"normalized_text": "旧输入"},
             long_term_memory={"summary": "保留"},
             plan={"mode": "tool"},
             reflection={"status": "passed"},
@@ -47,6 +49,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(result["messages"][0].content, "你好")
         self.assertEqual(result["long_term_memory"], {"summary": "保留"})
         self.assertEqual(result["approved_tool_call_ids"], ["tool_1"])
+        self.assertEqual(result["input_context"], {})
         self.assertEqual(result["plan"], {})
         self.assertEqual(result["reflection"], {})
         self.assertEqual(result["last_tool_request"], {})
@@ -62,6 +65,7 @@ class AgentStateTest(unittest.TestCase):
         state = ensure_state_defaults({"messages": [HumanMessage(content="旧会话")]})
 
         self.assertEqual(state["messages"][0].content, "旧会话")
+        self.assertEqual(state["input_context"], {})
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["reflection"], {})
         self.assertIn("long_term_memory", state)

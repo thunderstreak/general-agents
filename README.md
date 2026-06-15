@@ -7,6 +7,7 @@
 - 多轮命令行对话。
 - 基于 LangGraph 的节点编排。
 - 支持 OpenAI-compatible API，包括官方 OpenAI 或第三方兼容服务。
+- 支持统一 Perception（感知理解）节点，将文本、附件、图片和工具/RAG 触发信号整理到 `input_context`。
 - 支持轻量 Planning（规划决策），普通对话默认直接回答；明确工具意图会进入可调用工具的 agent 模式。
 - 支持天气、IP 定位、网页搜索、URL 内容抓取等工具调用。
 - 支持本地长期记忆，默认写入 `.agent_memory.json`。
@@ -204,6 +205,8 @@ langgraph/
   ↓
 CLI 解析文本和 @文件路径
   ↓
+LangGraph: perception 节点
+  ↓
 LangGraph: retrieval 节点
   ↓
 LangGraph: planning 节点
@@ -225,6 +228,7 @@ CLI 渲染输出
 
 ### LangGraph 节点说明
 
+- `perception`：统一提取本轮用户输入上下文，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 信号和候选工具名。
 - `retrieval`：RAG 检索预留节点。命中“知识库、文档、检索”等关键词时写入占位检索结果。
 - `planning`：使用本地工具意图 gate 生成结构化 `plan`；普通对话生成 `chat` plan，明确工具/实时/RAG/文件/记忆意图生成 `tool_agent` plan。
 - `agent`：读取 `plan` 决定普通聊天，或使用绑定工具的模型生成原生 `tool_calls`。
@@ -343,7 +347,7 @@ python scripts/check_tool_selector_examples.py
 
 ## 开发说明
 
-- `agent_app/graph.py` 负责 LangGraph 图构建和路由；`agent_app/nodes/` 按 retrieval、planning、agent、tools、reflection 等领域拆分节点实现。模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
+- `agent_app/graph.py` 负责 LangGraph 图构建和路由；`agent_app/nodes/` 按 perception、retrieval、planning、agent、tools、reflection 等领域拆分节点实现。模型实例采用延迟初始化，避免导入模块时立即创建 LLM。
 - `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 state reset 和旧会话默认值补齐。
 - `agent_app/utils/` 存放通用 helper；其中 `utils/messages.py` 提供 LangChain message 文本提取，避免各模块重复解析消息结构。
 - `agent_app/cli.py` 保留 CLI 主循环、输入读取和会话命令；`agent_app/cli_stream.py` 负责流式 chunk 解析、进度输出和 debug 尾部渲染。
