@@ -43,6 +43,9 @@ class ReflectionNodeTest(unittest.TestCase):
                 "tool_name": "get_weather",
                 "success": True,
                 "result": "天气查询失败：用户没有提供城市，请提供城市名后再查询。",
+                "result_status": "ask_user",
+                "error_type": "missing_parameter",
+                "missing_info": "城市",
             }
         ]
 
@@ -57,8 +60,19 @@ class ReflectionNodeTest(unittest.TestCase):
         """临时错误未超限时触发重试。"""
         state = base_state()
         state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
-        state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
-        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+        state["tool_calls"] = [
+            {
+                "tool_name": "fetch_url",
+                "success": False,
+                "result": "timeout",
+                "error": "timeout",
+                "result_status": "failed",
+                "error_type": "temporary",
+                "is_retryable": True,
+                "fallback_tool_names": ["web_search"],
+            }
+        ]
+        state["tool_errors"] = [state["tool_calls"][0]]
 
         result = reflection_node(state)
 
@@ -73,8 +87,19 @@ class ReflectionNodeTest(unittest.TestCase):
         state = base_state()
         state["reflection"] = {"retry_count": 1}
         state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
-        state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
-        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+        state["tool_calls"] = [
+            {
+                "tool_name": "fetch_url",
+                "success": False,
+                "result": "timeout",
+                "error": "timeout",
+                "result_status": "failed",
+                "error_type": "temporary",
+                "is_retryable": True,
+                "fallback_tool_names": ["web_search"],
+            }
+        ]
+        state["tool_errors"] = [state["tool_calls"][0]]
 
         result = reflection_node(state)
 
@@ -90,8 +115,19 @@ class ReflectionNodeTest(unittest.TestCase):
         state["reflection"] = {"retry_count": 1}
         state["attempted_tools"] = ["fetch_url", "web_search"]
         state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
-        state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
-        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+        state["tool_calls"] = [
+            {
+                "tool_name": "fetch_url",
+                "success": False,
+                "result": "timeout",
+                "error": "timeout",
+                "result_status": "failed",
+                "error_type": "temporary",
+                "is_retryable": True,
+                "fallback_tool_names": ["web_search"],
+            }
+        ]
+        state["tool_errors"] = [state["tool_calls"][0]]
 
         result = reflection_node(state)
 
@@ -119,6 +155,9 @@ class ReflectionNodeTest(unittest.TestCase):
                 "tool_name": "fetch_url",
                 "success": True,
                 "result": "URL 抓取完成，但该内容类型不支持正文抓取",
+                "result_status": "insufficient",
+                "error_type": "unsupported_content",
+                "fallback_tool_names": ["web_search"],
             }
         ]
 
@@ -150,6 +189,59 @@ class ReflectionNodeTest(unittest.TestCase):
             {"tool_name": "fetch_url", "success": True, "result": "最新工具结果"},
         ]
         state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "passed")
+        self.assertEqual(result["reflection"]["next_action"], "agent")
+
+    def test_reflection_node_prefers_structured_missing_parameter(self):
+        """结构化缺参字段优先于错误文案。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="opaque", tool_call_id="tool_1")]
+        state["tool_calls"] = [
+            {
+                "tool_name": "get_weather",
+                "success": True,
+                "result": "opaque",
+                "result_status": "ask_user",
+                "error_type": "missing_parameter",
+                "missing_info": "城市",
+            }
+        ]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "ask_user")
+        self.assertEqual(result["reflection"]["missing_info"], "城市")
+        self.assertEqual(result["reflection"]["next_action"], "response")
+
+    def test_reflection_node_prefers_structured_fallback(self):
+        """结构化 fallback 字段优先于关键词判断。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="opaque", tool_call_id="tool_1")]
+        state["tool_calls"] = [
+            {
+                "tool_name": "fetch_url",
+                "success": True,
+                "result": "opaque",
+                "result_status": "insufficient",
+                "error_type": "unsupported_content",
+                "fallback_tool_names": ["web_search"],
+            }
+        ]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "insufficient")
+        self.assertEqual(result["reflection"]["next_action"], "planning")
+        self.assertEqual(result["reflection"]["fallback_tool_name"], "web_search")
+
+    def test_reflection_node_unstructured_success_record_passes(self):
+        """缺少结构化字段的成功记录不再做文本关键词兼容。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="URL 抓取完成，但该内容类型不支持正文抓取", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "fetch_url", "success": True, "result": "URL 抓取完成，但该内容类型不支持正文抓取"}]
 
         result = reflection_node(state)
 

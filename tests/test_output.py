@@ -89,13 +89,23 @@ class OutputTest(unittest.TestCase):
     def test_render_cli_debug_response(self):
         """CLI debug 渲染。"""
         state = _state("回答内容")
-        state["tool_calls"] = [{"tool_name": "web_search", "success": True, "duration_ms": 10.5, "attempts": 1}]
+        state["tool_calls"] = [
+            {
+                "tool_name": "web_search",
+                "success": True,
+                "duration_ms": 10.5,
+                "attempts": 1,
+                "result_status": "ok",
+                "error_type": "",
+            }
+        ]
         state["node_runs"] = [{"node_name": "agent", "success": True, "duration_ms": 20.0, "error": ""}]
 
         text = render_cli_response(build_response(state), debug=True)
 
         self.assertIn("trace_id: trace-1", text)
         self.assertIn("web_search", text)
+        self.assertIn("result_status=ok", text)
         self.assertIn("agent", text)
 
     def test_render_cli_debug_includes_reflection(self):

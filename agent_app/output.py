@@ -109,6 +109,10 @@ def _build_tool_summary(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]
                 "success": bool(call.get("success")),
                 "duration_ms": call.get("duration_ms", 0.0),
                 "attempts": call.get("attempts", 0),
+                "result_status": call.get("result_status", ""),
+                "error_type": call.get("error_type", ""),
+                "is_retryable": bool(call.get("is_retryable")),
+                "fallback_tool_names": call.get("fallback_tool_names", []),
             }
         )
     return summary
@@ -145,7 +149,9 @@ def _render_debug_lines(response: dict[str, Any]) -> list[str]:
                 f"  - {tool.get('tool_name', '')}: "
                 f"success={tool.get('success')} "
                 f"duration_ms={tool.get('duration_ms')} "
-                f"attempts={tool.get('attempts')}"
+                f"attempts={tool.get('attempts')} "
+                f"result_status={tool.get('result_status', '')} "
+                f"error_type={tool.get('error_type', '')}"
             )
 
     node_runs = response.get("node_runs", [])

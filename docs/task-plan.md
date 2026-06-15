@@ -11,12 +11,12 @@
 | 感知理解 | 已实现但分散 | P1 | CLI 支持文本输入和 `@文件路径`，文件解析模块支持文本、文档、表格、图片输入 | 增加统一 perception 节点，规范输入解析结果、附件元数据和多模态能力判断 |
 | Prompt 管理 | 已完成 | P1 | 工具选择 prompt 已拆分到 `agent_app/prompts/`，并提供样例文件；历史 Intent Router prompt 已清理 | 后续可继续增加版本管理和环境区分 |
 | 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
-| Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
+| Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
 | State 状态管理 | 已完成 | P1 | `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐；state 已包含 `messages`、`tool_selection`、`plan`、`reflection`、`tool_calls` 等字段 | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、意图、视觉、Embedding 模型，支持 timeout、retry、fallback；graph/tool selector 已改为延迟初始化模型；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计 |
 | RAG 知识检索 | 未实现 | P2 | 已有 `EMBEDDING_MODEL_NAME`、`get_embedding_model()`、`retrieval_node`、`retrieval_results` 和输出层来源展示预留；尚未实现真实知识库导入、切分、向量化、Chroma 向量库和检索 | 第一版实现本地文件知识库、文本切分、embedding、Chroma vector store、retriever、引用来源输出和 CLI 知识库命令 |
 | Memory 记忆 | 已完成但检索弱 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON，并在模型调用前注入上下文 | 增加记忆管理命令、隐私策略、长期记忆语义检索和更细粒度存储 |
-| 反思评估 | 已完成基础闭环 | P2 | `reflection_node` 已支持结构化反思、结果不足判断、参数缺失追问、临时错误重试、不可重试失败、停止原因、`fetch_url -> web_search` 换工具和 planning 联动 | 后续增强 LLM Judge、更多工具 fallback 和复杂结果质量判断 |
+| 反思评估 | 已完成基础闭环 | P2 | `reflection_node` 已优先基于结构化工具结果决策，支持结果不足判断、参数缺失追问、临时错误重试、不可重试失败、停止原因、`fetch_url -> web_search` 换工具和 planning 联动；关键词判断仅作旧记录兼容 | 后续增强 LLM Judge、更多工具 fallback 和复杂结果质量判断 |
 | 循环迭代控制 | 已完成基础结构 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；reflection 可路由到 agent/tools/planning/response/error，并记录 retry/stop/loop reason 和 attempted tools | 增加更细的工具级 retry policy 和多步 plan 推进 |
 | Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes/` 按领域拆分节点实现；支持 retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 接入真实 RAG、多步 plan 推进和更细可观测性 |
 | 数据存储 | 已实现基础会话保存 | P2 | 已有 `.agent_memory.json` 长期记忆和 `.agent_sessions/` 文件夹式会话历史；RAG 文档/chunk 元数据、Chroma 向量索引、工具记录和 trace 尚未持久化 | 补齐 RAG 元数据、工具运行记录、节点 trace、用户配置和数据清理能力 |
@@ -41,7 +41,7 @@
 | 规划决策 | `planning_node` 使用本地工具意图 gate 生成 `chat/tool_agent` 结构化 plan | 当前仍是单步轻量 planning，不支持多步任务拆解、参数补全和计划推进 | 增强多步 planning，支持低置信度追问和 plan 状态推进 |
 | 工具调用 | `agent_node` 对 `tool_agent` plan 调用绑定工具模型，由模型原生 tool calling 生成 `tool_calls`，router 进入 tools | 当前只支持单轮工具调用和轻量工具模式判断 | 扩展为多工具/多意图计划，支持工具结果聚合 |
 | 执行 | `tool_node()` 调用 `run_tool()`，支持白名单、重试、错误格式和耗时记录 | 工具运行记录未持久化；失败策略较粗 | 持久化 tool runs，增加按错误类型的 retry policy |
-| 反思 | 工具后进入 `reflection_node`，按工具结果充分性、参数缺失、临时错误和不可重试错误决定总结、重试、追问、换工具或失败 | 暂未支持 LLM Judge 和复杂质量判断 | 增强更多工具 fallback、重新规划策略和复杂结果质量评估 |
+| 反思 | 工具后进入 `reflection_node`，优先读取 ToolRunRecord 的 `result_status/error_type/is_retryable/fallback_tool_names/missing_info` 决定总结、重试、追问、换工具或失败 | 暂未支持 LLM Judge 和复杂质量判断 | 增强更多工具 fallback、重新规划策略和复杂结果质量评估 |
 | 输出 | `response_node()` 生成统一 `final_response`，CLI 支持普通/流式渲染 | Markdown/API/前端适配仍基础 | 增加更丰富 Markdown 渲染和 API 输出适配 |
 
 ## 任务优先级
@@ -97,6 +97,7 @@
    - [x] 将工具 metadata 就近声明到工具模块内，注册中心只负责汇总。
    - [x] 增加工具级重试和日志。
    - [x] 增加工具白名单检查。
+   - [x] 增加结构化 ToolRunRecord，包含 `result_status`、`error_type`、`missing_info`、`is_retryable`、`fallback_tool_names`。
    - [ ] 支持多工具调用计划和工具结果聚合。
 
 5. [x] State 状态管理
@@ -188,6 +189,7 @@
    - [x] 将反思结果写入 `state["reflection"]`，包含 `status`、`reason`、`next_action`、`missing_info`、`retry_tool_name`、`retry_count`、`stop_reason`。
    - [x] 增加反思节点测试：成功通过、失败、重试、追问、结果不足、达到循环上限。
    - [x] 增强基础换工具策略和 planning 联动。
+   - [x] 将 Reflection 主判断改为结构化工具结果驱动，关键词判断降级为 legacy fallback。
    - [ ] 增强更多工具 fallback 和 LLM Judge。
 
 ### P3：产品化与服务化
@@ -218,6 +220,6 @@
 
 当前项目已经具备一个 LangGraph Agent 原型的核心骨架：LLM、工具调用、短期记忆、长期记忆、文件夹式会话历史、流式 CLI、结构化 Planning 第一阶段和基础编排已经可用。
 
-当前链路里的工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool agent 模式；反思评估已支持规则化结果质检、追问、重试、换工具和多路由，但仍缺少 LLM Judge、更多工具 fallback 和复杂结果质量判断。RAG 仍是 placeholder，循环迭代仍需要更细的工具级 retry policy 和多步计划推进。
+当前链路里的工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool agent 模式；反思评估已从关键词规则升级为结构化工具结果驱动，并支持结果质检、追问、重试、换工具和多路由，但仍缺少 LLM Judge、更多工具 fallback 和复杂结果质量判断。RAG 仍是 placeholder，循环迭代仍需要更细的工具级 retry policy 和多步计划推进。
 
 距离完整 agentic workflow 还需要补齐多步规划、结构化反思、真实知识检索、记忆语义检索、循环决策、工具/trace 持久化和更强可观测性。
