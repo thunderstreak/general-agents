@@ -1,6 +1,7 @@
 """网页搜索工具。"""
 
 from langchain_core.tools import tool
+from langchain_core.tools import ToolException
 from langchain_tavily import TavilySearch
 
 from agent_app.config import TAVILY_API_KEY, WEB_SEARCH_MAX_RESULTS, WEB_SEARCH_SEARCH_DEPTH
@@ -75,6 +76,8 @@ def _create_tavily_search() -> TavilySearch:
 
 def _extract_results(payload) -> list[dict]:
     """从 Tavily 返回值中提取结果列表。"""
+    if isinstance(payload, tuple) and len(payload) >= 2:
+        return _extract_results(payload[1])
     if isinstance(payload, dict):
         results = payload.get("results") or []
         return results if isinstance(results, list) else []
@@ -93,5 +96,8 @@ def web_search(query: str) -> str:
         return "网页搜索配置错误：缺少 TAVILY_API_KEY。请在 .env 中配置 Tavily Search API key。"
 
     tavily_search = _create_tavily_search()
-    payload = tavily_search.invoke({"query": query})
+    try:
+        payload = tavily_search._run(query)
+    except ToolException:
+        return "未搜索到相关结果。"
     return _format_search_results(_extract_results(payload))

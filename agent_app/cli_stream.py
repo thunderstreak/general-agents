@@ -19,6 +19,7 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
     latest_state = state
     printed_token = False
     printed_agent_prefix = False
+    status_visible = print_initial_status()
     printed_progress: set[str] = set()
     display_filter = PseudoToolCallDisplayFilter()
 
@@ -33,21 +34,25 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
         if chunk_type == "custom":
             message = custom_progress_message(data)
             if message and should_print_custom_progress(data) and CLI_STREAM_PROGRESS:
+                status_visible = clear_initial_status(status_visible)
                 printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
             continue
 
         if chunk_type == "updates":
             message = update_progress_message(data)
             if message and CLI_STREAM_PROGRESS and not printed_token:
+                status_visible = clear_initial_status(status_visible)
                 printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
             continue
 
         if chunk_type == "messages":
             token, tool_call_preview = display_filter.feed(message_chunk_text(data))
             if tool_call_preview and CLI_STREAM_PROGRESS:
+                status_visible = clear_initial_status(status_visible)
                 printed_agent_prefix = print_progress(tool_call_preview, printed_agent_prefix, printed_progress)
             if not token:
                 continue
+            status_visible = clear_initial_status(status_visible)
             if not printed_agent_prefix:
                 print("Agent: ", end="", flush=True)
                 printed_agent_prefix = True
@@ -56,8 +61,10 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
 
     token, tool_call_preview = display_filter.flush()
     if tool_call_preview and CLI_STREAM_PROGRESS:
+        status_visible = clear_initial_status(status_visible)
         printed_agent_prefix = print_progress(tool_call_preview, printed_agent_prefix, printed_progress)
     if token:
+        status_visible = clear_initial_status(status_visible)
         if not printed_agent_prefix:
             print("Agent: ", end="", flush=True)
             printed_agent_prefix = True
@@ -70,6 +77,7 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
         print()
         return latest_state
 
+    clear_initial_status(status_visible)
     print_response(latest_state)
     return latest_state
 
@@ -78,6 +86,21 @@ def print_response(state: dict[str, Any]) -> None:
     """打印统一响应。"""
     response = state.get("final_response") or build_response(state)
     print(f"{render_cli_response(response, debug=OUTPUT_DEBUG)}\n")
+
+
+def print_initial_status() -> bool:
+    """打印首响应等待期临时状态。"""
+    if not CLI_STREAM_PROGRESS:
+        return False
+    print("处理中...", end="", flush=True)
+    return True
+
+
+def clear_initial_status(status_visible: bool) -> bool:
+    """清除首响应等待期临时状态。"""
+    if status_visible:
+        print("\r\033[2K", end="", flush=True)
+    return False
 
 
 def stream_chunk_type(chunk) -> str:
@@ -195,13 +218,7 @@ class PseudoToolCallDisplayFilter:
 
 def _pseudo_tool_call_preview(block: str) -> str:
     """提取伪工具调用中适合展示给用户的参数值。"""
-    args = {}
-    for match in PSEUDO_PARAMETER_PATTERN.finditer(block):
-        args[match.group(1).strip()] = match.group(2).strip()
-    for name in ("query", "url", "city"):
-        if args.get(name):
-            return args[name]
-    return next((value for value in args.values() if value), "")
+    return ""
 
 
 def _partial_tool_marker_index(text: str) -> int:

@@ -93,6 +93,7 @@ class CliStreamTest(unittest.TestCase):
         self.assertEqual(fake_app.kwargs["version"], "v2")
         self.assertIn("检索中...", output)
         self.assertIn("Agent: 你好", output)
+        self.assertIn("处理中...", output)
 
     def test_update_progress_ignores_normal_chat_nodes(self):
         """普通节点 updates 不应显示检索、规划、思考等噪音进度。"""
@@ -247,8 +248,8 @@ class CliStreamTest(unittest.TestCase):
         self.assertNotIn("整理响应...", output)
         self.assertIn("Agent: 完成", output)
 
-    def test_stream_response_prints_pseudo_tool_call_preview_only(self):
-        """流式伪工具调用只展示核心参数，不展示 XML 标签。"""
+    def test_stream_response_hides_pseudo_tool_call_content(self):
+        """流式伪工具调用不展示 XML 标签和参数内容。"""
         final_state = {
             "messages": [],
             "final_response": {"content": "今日金价已查询。", "retrieval_sources": [], "tool_calls": [], "tool_summary": [], "errors": []},
@@ -286,7 +287,7 @@ class CliStreamTest(unittest.TestCase):
                 cli._stream_response({"messages": []})
 
         output = buffer.getvalue()
-        self.assertIn("今日黄金价格 实时金价查询 2026年6月15日", output)
+        self.assertNotIn("今日黄金价格 实时金价查询 2026年6月15日", output)
         self.assertIn("调用工具 web_search...", output)
         self.assertIn("工具 web_search 调用完成。", output)
         self.assertIn("Agent: 今日金价已查询。", output)
@@ -310,6 +311,29 @@ class CliStreamTest(unittest.TestCase):
 
         self.assertEqual(result, final_state)
         self.assertIn("Agent: 需要确认", buffer.getvalue())
+        self.assertEqual(buffer.getvalue().count("Agent:"), 1)
+
+    def test_stream_response_prints_initial_status_before_first_chunk(self):
+        """进入 stream 前立即输出临时状态而非 Agent 前缀。"""
+        fake_app = FakeStreamApp([])
+
+        buffer = io.StringIO()
+        with patch.object(cli, "get_app", return_value=fake_app), redirect_stdout(buffer):
+            result = cli._stream_response({"messages": []})
+
+        self.assertEqual(result, {"messages": []})
+        self.assertTrue(buffer.getvalue().startswith("处理中..."))
+        self.assertFalse(buffer.getvalue().startswith("Agent: "))
+
+    def test_stream_response_hides_initial_status_when_progress_disabled(self):
+        """关闭进度时不显示临时状态。"""
+        fake_app = FakeStreamApp([])
+
+        buffer = io.StringIO()
+        with patch.object(cli, "get_app", return_value=fake_app), patch.object(cli, "CLI_STREAM_PROGRESS", False), redirect_stdout(buffer):
+            cli._stream_response({"messages": []})
+
+        self.assertNotIn("处理中...", buffer.getvalue())
 
     def test_stream_debug_tail_does_not_repeat_answer(self):
         """流式 debug 尾部不应重复打印回答正文。"""

@@ -28,7 +28,7 @@ class WebSearchTest(unittest.TestCase):
     def test_web_search_formats_tavily_results(self):
         """Tavily 正常结果会格式化为标题、链接和摘要。"""
         tavily = Mock()
-        tavily.invoke.return_value = {
+        tavily._run.return_value = {
             "results": [
                 {
                     "title": "OpenAI News",
@@ -47,12 +47,12 @@ class WebSearchTest(unittest.TestCase):
         self.assertIn("1. OpenAI News", result)
         self.assertIn("链接: https://example.com/openai", result)
         self.assertIn("摘要: OpenAI 发布了新消息。", result)
-        tavily.invoke.assert_called_once_with({"query": "OpenAI 最新消息"})
+        tavily._run.assert_called_once_with("OpenAI 最新消息")
 
     def test_web_search_returns_no_results_message(self):
         """Tavily 无结果时返回统一无结果文本。"""
         tavily = Mock()
-        tavily.invoke.return_value = {"results": []}
+        tavily._run.return_value = {"results": []}
 
         with patch("agent_app.tools.web_search.TAVILY_API_KEY", "test-key"), patch(
             "agent_app.tools.web_search._create_tavily_search",
@@ -79,6 +79,7 @@ class WebSearchTest(unittest.TestCase):
         results = [{"title": "A"}]
 
         self.assertEqual(_extract_results({"results": results}), results)
+        self.assertEqual(_extract_results(("content", {"results": results})), results)
         self.assertEqual(_extract_results(results), results)
         self.assertEqual(_extract_results({"results": "bad"}), [])
 
