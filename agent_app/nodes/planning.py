@@ -19,6 +19,16 @@ def planning_node(state: AgentState):
             "node_runs": [node_run("planning", start_time)],
         }
 
+    reflection = state.get("reflection") or {}
+    fallback_tool_name = reflection.get("fallback_tool_name")
+    if reflection.get("next_action") == "planning" and fallback_tool_name:
+        selection = fallback_tool_selection(str(fallback_tool_name), reflection)
+        return {
+            "tool_selection": selection.to_dict(),
+            "plan": selection_to_plan(selection),
+            "node_runs": [node_run("planning", start_time)],
+        }
+
     latest_message = latest_human_message(state["messages"])
     user_text = message_text(latest_message)
 
@@ -89,6 +99,23 @@ def tool_agent_selection(user_text: str) -> ToolSelection:
         confidence=1.0,
         reason="本地判断：进入工具 agent 模式",
     )
+
+
+def fallback_tool_selection(tool_name: str, reflection: dict) -> ToolSelection:
+    """根据 reflection 指定的 fallback 工具生成计划选择。"""
+    reason = reflection.get("loop_reason") or reflection.get("reason") or f"反思决策：切换到 {tool_name}"
+    args = {}
+    if tool_name == "web_search":
+        args = {"query": _fallback_query(reflection)}
+    return ToolSelection(action="tool", tool_name=tool_name, args=args, confidence=1.0, reason=str(reason))
+
+
+def _fallback_query(reflection: dict) -> str:
+    """生成 fallback 搜索查询。"""
+    reason = str(reflection.get("reason") or "").strip()
+    if reason:
+        return reason[:200]
+    return "用户请求相关信息"
 
 
 def current_plan_step(plan: dict) -> dict:

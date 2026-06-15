@@ -22,6 +22,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["reflection"], {})
         self.assertEqual(state["last_tool_request"], {})
+        self.assertEqual(state["attempted_tools"], [])
         self.assertEqual(state["long_term_memory"]["summary"], "摘要")
         self.assertIn("node_runs", state)
 
@@ -33,6 +34,7 @@ class AgentStateTest(unittest.TestCase):
             plan={"mode": "tool"},
             reflection={"status": "passed"},
             last_tool_request={"tool_calls": [{"name": "get_weather"}]},
+            attempted_tools=["fetch_url"],
             tool_calls=[{"tool_name": "get_weather"}],
             tool_errors=[{"error": "old"}],
             retrieval_results=[{"source": "old"}],
@@ -48,6 +50,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(result["plan"], {})
         self.assertEqual(result["reflection"], {})
         self.assertEqual(result["last_tool_request"], {})
+        self.assertEqual(result["attempted_tools"], [])
         self.assertEqual(result["tool_calls"], [])
         self.assertEqual(result["tool_errors"], [])
         self.assertEqual(result["retrieval_results"], [])

@@ -67,6 +67,7 @@ def reflection_node(state: AgentState):
     latest_tool_messages = _latest_tool_messages(state)
     latest_tool_calls = _latest_tool_calls(state, len(latest_tool_messages))
     latest_tool_errors = [record for record in latest_tool_calls if isinstance(record, dict) and not record.get("success")]
+    attempted_tools = _attempted_tools(state, latest_tool_calls)
     retry_count = int((state.get("reflection") or {}).get("retry_count", 0))
     max_steps = int(state.get("max_steps", 0) or 0)
     step_count = int(state.get("step_count", 0) or 0)
@@ -76,7 +77,7 @@ def reflection_node(state: AgentState):
         return _failed(start_time, message, stop_reason="max_steps_exceeded")
 
     if latest_tool_errors:
-        return _reflect_tool_errors(latest_tool_errors, retry_count, start_time)
+        return _reflect_tool_errors(latest_tool_errors, retry_count, attempted_tools, start_time)
 
     if not latest_tool_calls:
         message = "没有可核对的工具结果。"
@@ -84,12 +85,22 @@ def reflection_node(state: AgentState):
 
     result_text = _latest_tool_text(state, latest_tool_messages, latest_tool_calls)
     if _is_blank_result(result_text):
+        fallback_tool_name = _fallback_tool_for_insufficient(_latest_tool_name(latest_tool_calls), attempted_tools)
+        if fallback_tool_name:
+            return _fallback_to_planning(
+                start_time,
+                reason="工具调用成功，但没有返回有效内容。",
+                fallback_tool_name=fallback_tool_name,
+                attempted_tools=attempted_tools,
+                stop_reason="empty_tool_result",
+            )
         return _response_reflection(
             start_time,
             status="insufficient",
             reason="工具调用成功，但没有返回有效内容。",
             next_action="response",
             missing_info="有效工具结果",
+            attempted_tools=attempted_tools,
             stop_reason="empty_tool_result",
         )
 
@@ -100,15 +111,26 @@ def reflection_node(state: AgentState):
             reason=result_text,
             next_action="response",
             missing_info=_missing_info_from_text(result_text),
+            attempted_tools=attempted_tools,
         )
 
     if _contains_any(result_text, INSUFFICIENT_RESULT_KEYWORDS):
+        fallback_tool_name = _fallback_tool_for_insufficient(_latest_tool_name(latest_tool_calls), attempted_tools)
+        if fallback_tool_name:
+            return _fallback_to_planning(
+                start_time,
+                reason=result_text,
+                fallback_tool_name=fallback_tool_name,
+                attempted_tools=attempted_tools,
+                stop_reason="insufficient_tool_result",
+            )
         return _response_reflection(
             start_time,
             status="insufficient",
             reason=result_text,
             next_action="response",
             missing_info="可用工具结果",
+            attempted_tools=attempted_tools,
             stop_reason="insufficient_tool_result",
         )
 
@@ -120,10 +142,14 @@ def reflection_node(state: AgentState):
                 reason=result_text,
                 next_action="response",
                 missing_info=_missing_info_from_text(result_text),
-        )
+                attempted_tools=attempted_tools,
+            )
         if _contains_any(result_text, TEMPORARY_ERROR_KEYWORDS) and retry_count < RETRY_LIMIT:
-            return _retry(start_time, result_text, _latest_tool_name(latest_tool_calls), retry_count)
-        return _failed(start_time, result_text, stop_reason="tool_result_failure")
+            return _retry(start_time, result_text, _latest_tool_name(latest_tool_calls), retry_count, attempted_tools)
+        fallback_tool_name = _fallback_tool_for_error(_latest_tool_name(latest_tool_calls), attempted_tools)
+        if fallback_tool_name:
+            return _fallback_to_planning(start_time, result_text, fallback_tool_name, attempted_tools, "tool_result_failure")
+        return _failed(start_time, result_text, attempted_tools=attempted_tools, stop_reason="tool_result_failure")
 
     return {
         "reflection": _reflection(
@@ -131,12 +157,13 @@ def reflection_node(state: AgentState):
             reason="工具调用成功，进入结果总结。",
             next_action="agent",
             retry_count=retry_count,
+            attempted_tools=attempted_tools,
         ),
         "node_runs": [node_run("reflection", start_time)],
     }
 
 
-def _reflect_tool_errors(tool_errors: list[dict], retry_count: int, start_time: float) -> dict:
+def _reflect_tool_errors(tool_errors: list[dict], retry_count: int, attempted_tools: list[str], start_time: float) -> dict:
     """根据工具错误判断是否重试、追问或失败。"""
     message = join_tool_errors(tool_errors)
     tool_name = _latest_tool_name(tool_errors)
@@ -149,20 +176,27 @@ def _reflect_tool_errors(tool_errors: list[dict], retry_count: int, start_time: 
             next_action="response",
             missing_info=_missing_info_from_text(message),
             retry_count=retry_count,
+            attempted_tools=attempted_tools,
         )
 
     if _contains_any(message, NON_RETRYABLE_ERROR_KEYWORDS):
-        return _failed(start_time, message, retry_count=retry_count, stop_reason="non_retryable_tool_error")
+        return _failed(start_time, message, retry_count=retry_count, attempted_tools=attempted_tools, stop_reason="non_retryable_tool_error")
 
     if _contains_any(message, TEMPORARY_ERROR_KEYWORDS):
         if retry_count < RETRY_LIMIT:
-            return _retry(start_time, message, tool_name, retry_count)
-        return _failed(start_time, message, retry_count=retry_count, stop_reason="retry_limit_exceeded")
+            return _retry(start_time, message, tool_name, retry_count, attempted_tools)
+        fallback_tool_name = _fallback_tool_for_error(tool_name, attempted_tools)
+        if fallback_tool_name:
+            return _fallback_to_planning(start_time, message, fallback_tool_name, attempted_tools, "retry_limit_exceeded")
+        return _failed(start_time, message, retry_count=retry_count, attempted_tools=attempted_tools, stop_reason="retry_limit_exceeded")
 
-    return _failed(start_time, message, retry_count=retry_count, stop_reason="tool_error")
+    fallback_tool_name = _fallback_tool_for_error(tool_name, attempted_tools)
+    if fallback_tool_name:
+        return _fallback_to_planning(start_time, message, fallback_tool_name, attempted_tools, "tool_error")
+    return _failed(start_time, message, retry_count=retry_count, attempted_tools=attempted_tools, stop_reason="tool_error")
 
 
-def _retry(start_time: float, reason: str, tool_name: str, retry_count: int) -> dict:
+def _retry(start_time: float, reason: str, tool_name: str, retry_count: int, attempted_tools: list[str]) -> dict:
     """生成重试决策。"""
     next_retry_count = retry_count + 1
     return {
@@ -172,13 +206,32 @@ def _retry(start_time: float, reason: str, tool_name: str, retry_count: int) -> 
             next_action="tools",
             retry_tool_name=tool_name,
             retry_count=next_retry_count,
+            attempted_tools=attempted_tools,
+            loop_reason=f"临时错误，重试工具 {tool_name}",
         ),
         "last_error": {},
         "node_runs": [node_run("reflection", start_time)],
     }
 
 
-def _failed(start_time: float, reason: str, retry_count: int = 0, stop_reason: str = "") -> dict:
+def _fallback_to_planning(start_time: float, reason: str, fallback_tool_name: str, attempted_tools: list[str], stop_reason: str = "") -> dict:
+    """生成切换工具并回到 planning 的决策。"""
+    return {
+        "reflection": _reflection(
+            status="insufficient",
+            reason=reason,
+            next_action="planning",
+            fallback_tool_name=fallback_tool_name,
+            attempted_tools=attempted_tools,
+            loop_reason=f"当前工具结果不足，切换到 {fallback_tool_name}",
+            stop_reason=stop_reason,
+        ),
+        "last_error": {},
+        "node_runs": [node_run("reflection", start_time)],
+    }
+
+
+def _failed(start_time: float, reason: str, retry_count: int = 0, attempted_tools: list[str] | None = None, stop_reason: str = "") -> dict:
     """生成不可恢复失败决策。"""
     return {
         "reflection": _reflection(
@@ -186,6 +239,7 @@ def _failed(start_time: float, reason: str, retry_count: int = 0, stop_reason: s
             reason=reason,
             next_action="error",
             retry_count=retry_count,
+            attempted_tools=attempted_tools or [],
             stop_reason=stop_reason,
         ),
         "last_error": error_state(reason, "reflection_error", "reflection"),
@@ -200,6 +254,7 @@ def _response_reflection(
     next_action: str,
     missing_info: str = "",
     retry_count: int = 0,
+    attempted_tools: list[str] | None = None,
     stop_reason: str = "",
 ) -> dict:
     """生成进入 response 的反思决策。"""
@@ -210,6 +265,7 @@ def _response_reflection(
             next_action=next_action,
             missing_info=missing_info,
             retry_count=retry_count,
+            attempted_tools=attempted_tools or [],
             stop_reason=stop_reason,
         ),
         "last_error": {},
@@ -223,7 +279,10 @@ def _reflection(
     next_action: str,
     missing_info: str = "",
     retry_tool_name: str = "",
+    fallback_tool_name: str = "",
     retry_count: int = 0,
+    attempted_tools: list[str] | None = None,
+    loop_reason: str = "",
     stop_reason: str = "",
 ) -> dict:
     """构造统一 reflection 结构。"""
@@ -233,9 +292,38 @@ def _reflection(
         "next_action": next_action,
         "missing_info": missing_info,
         "retry_tool_name": retry_tool_name,
+        "fallback_tool_name": fallback_tool_name,
         "retry_count": retry_count,
+        "attempted_tools": attempted_tools or [],
+        "loop_reason": loop_reason,
         "stop_reason": stop_reason,
     }
+
+
+def _attempted_tools(state: AgentState, latest_tool_calls: list[dict]) -> list[str]:
+    """合并本轮已尝试工具，保持顺序并去重。"""
+    names = []
+    for name in state.get("attempted_tools", []):
+        if isinstance(name, str) and name:
+            names.append(name)
+    for record in latest_tool_calls:
+        if isinstance(record, dict) and record.get("tool_name"):
+            names.append(str(record["tool_name"]))
+    return list(dict.fromkeys(names))
+
+
+def _fallback_tool_for_error(tool_name: str, attempted_tools: list[str]) -> str:
+    """根据失败工具选择 fallback 工具。"""
+    if tool_name == "fetch_url" and "web_search" not in attempted_tools:
+        return "web_search"
+    return ""
+
+
+def _fallback_tool_for_insufficient(tool_name: str, attempted_tools: list[str]) -> str:
+    """根据不足结果选择 fallback 工具。"""
+    if tool_name == "fetch_url" and "web_search" not in attempted_tools:
+        return "web_search"
+    return ""
 
 
 def _latest_tool_messages(state: AgentState) -> list[ToolMessage]:

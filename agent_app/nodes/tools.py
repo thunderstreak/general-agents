@@ -44,6 +44,14 @@ def tool_node(state: AgentState):
         "messages": tool_messages,
         "tool_calls": tool_call_records,
         "tool_errors": tool_error_records,
+        "attempted_tools": _merge_attempted_tools(state, [record["tool_name"] for record in tool_call_records]),
         "node_runs": [node_run("tools", start_time, success=not tool_error_records, error=join_tool_errors(tool_error_records))],
     }
     return state_update
+
+
+def _merge_attempted_tools(state: AgentState, tool_names: list[str]) -> list[str]:
+    """合并本轮已尝试工具。"""
+    names = [name for name in state.get("attempted_tools", []) if isinstance(name, str) and name]
+    names.extend(name for name in tool_names if isinstance(name, str) and name)
+    return list(dict.fromkeys(names))

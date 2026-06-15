@@ -69,9 +69,26 @@ class ReflectionNodeTest(unittest.TestCase):
         self.assertEqual(result["last_error"], {})
 
     def test_reflection_node_fails_after_retry_limit(self):
-        """临时错误达到重试上限后失败。"""
+        """fetch_url 临时错误达到重试上限后 fallback 到搜索。"""
         state = base_state()
         state["reflection"] = {"retry_count": 1}
+        state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
+        state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
+        state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "insufficient")
+        self.assertEqual(result["reflection"]["next_action"], "planning")
+        self.assertEqual(result["reflection"]["fallback_tool_name"], "web_search")
+        self.assertEqual(result["reflection"]["stop_reason"], "retry_limit_exceeded")
+        self.assertEqual(result["last_error"], {})
+
+    def test_reflection_node_fails_after_retry_limit_without_fallback_loop(self):
+        """已尝试 fallback 后不再重复切换同一工具。"""
+        state = base_state()
+        state["reflection"] = {"retry_count": 1}
+        state["attempted_tools"] = ["fetch_url", "web_search"]
         state["messages"] = [ToolMessage(content="失败", tool_call_id="tool_1")]
         state["tool_calls"] = [{"tool_name": "fetch_url", "success": False, "result": "timeout"}]
         state["tool_errors"] = [{"tool_name": "fetch_url", "success": False, "error": "timeout"}]
@@ -83,7 +100,7 @@ class ReflectionNodeTest(unittest.TestCase):
         self.assertEqual(result["last_error"]["type"], "reflection_error")
 
     def test_reflection_node_marks_empty_result_insufficient(self):
-        """空工具结果进入 insufficient。"""
+        """web_search 空工具结果进入 insufficient response。"""
         state = base_state()
         state["messages"] = [ToolMessage(content="", tool_call_id="tool_1")]
         state["tool_calls"] = [{"tool_name": "web_search", "success": True, "result": ""}]
@@ -92,6 +109,25 @@ class ReflectionNodeTest(unittest.TestCase):
 
         self.assertEqual(result["reflection"]["status"], "insufficient")
         self.assertEqual(result["reflection"]["next_action"], "response")
+
+    def test_reflection_node_fallbacks_fetch_url_insufficient_to_search(self):
+        """fetch_url 正文不足时 fallback 到 web_search。"""
+        state = base_state()
+        state["messages"] = [ToolMessage(content="URL 抓取完成，但该内容类型不支持正文抓取", tool_call_id="tool_1")]
+        state["tool_calls"] = [
+            {
+                "tool_name": "fetch_url",
+                "success": True,
+                "result": "URL 抓取完成，但该内容类型不支持正文抓取",
+            }
+        ]
+
+        result = reflection_node(state)
+
+        self.assertEqual(result["reflection"]["status"], "insufficient")
+        self.assertEqual(result["reflection"]["next_action"], "planning")
+        self.assertEqual(result["reflection"]["fallback_tool_name"], "web_search")
+        self.assertEqual(result["reflection"]["attempted_tools"], ["fetch_url"])
 
     def test_reflection_node_marks_max_steps_exceeded(self):
         """达到最大步骤时停止。"""

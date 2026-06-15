@@ -18,6 +18,7 @@ class AgentState(TypedDict):
     plan: dict
     reflection: dict
     last_tool_request: dict
+    attempted_tools: list
     tool_calls: Annotated[list, operator.add]
     tool_errors: Annotated[list, operator.add]
     retrieval_results: Annotated[list, operator.add]
@@ -43,6 +44,7 @@ def create_initial_state(**overrides: Any) -> dict[str, Any]:
         "plan": {},
         "reflection": {},
         "last_tool_request": {},
+        "attempted_tools": [],
         "tool_calls": [],
         "tool_errors": [],
         "retrieval_results": [],
@@ -70,6 +72,7 @@ def reset_turn_state(state: dict[str, Any]) -> dict[str, Any]:
     state["plan"] = {}
     state["reflection"] = {}
     state["last_tool_request"] = {}
+    state["attempted_tools"] = []
     state["tool_calls"] = []
     state["tool_errors"] = []
     state["retrieval_results"] = []

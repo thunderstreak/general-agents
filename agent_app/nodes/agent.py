@@ -62,6 +62,7 @@ def agent_node(state: AgentState):
         state_update = {**step_update, "messages": [response], "node_runs": [node_run("agent", start_time)]}
         if getattr(response, "tool_calls", None):
             state_update["last_tool_request"] = {"tool_calls": response.tool_calls}
+            state_update["attempted_tools"] = _merge_attempted_tools(state, [tool_call["name"] for tool_call in response.tool_calls])
         return state_update
     except Exception as exc:
         message = f"Agent 节点执行失败：{exc}"
@@ -102,6 +103,13 @@ def get_llm_with_tools():
     if _llm_with_tools is None:
         _llm_with_tools = get_chat_llm().bind_tools(tools)
     return _llm_with_tools
+
+
+def _merge_attempted_tools(state: AgentState, tool_names: list[str]) -> list[str]:
+    """合并本轮已尝试工具。"""
+    names = [name for name in state.get("attempted_tools", []) if isinstance(name, str) and name]
+    names.extend(name for name in tool_names if isinstance(name, str) and name)
+    return list(dict.fromkeys(names))
 
 
 def with_context(messages: list, memory_state: dict, retrieval_results: list):

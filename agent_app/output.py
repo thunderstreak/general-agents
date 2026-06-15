@@ -150,6 +150,12 @@ def _render_debug_lines(response: dict[str, Any]) -> list[str]:
             f"retry_count={reflection.get('retry_count', 0)} "
             f"stop_reason={reflection.get('stop_reason', '')}"
         )
+        if reflection.get("fallback_tool_name") or reflection.get("loop_reason") or reflection.get("attempted_tools"):
+            lines.append(
+                f"  - fallback_tool={reflection.get('fallback_tool_name', '')} "
+                f"attempted_tools={reflection.get('attempted_tools', [])} "
+                f"loop_reason={reflection.get('loop_reason', '')}"
+            )
         if reflection.get("reason"):
             lines.append(f"  - reason={reflection.get('reason')}")
 

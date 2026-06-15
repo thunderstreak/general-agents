@@ -83,6 +83,9 @@ class OutputTest(unittest.TestCase):
             "reason": "timeout",
             "next_action": "tools",
             "retry_count": 1,
+            "fallback_tool_name": "web_search",
+            "attempted_tools": ["fetch_url"],
+            "loop_reason": "当前工具结果不足，切换到 web_search",
             "stop_reason": "",
         }
 
@@ -91,6 +94,8 @@ class OutputTest(unittest.TestCase):
         self.assertIn("- reflection:", text)
         self.assertIn("status=retry", text)
         self.assertIn("next_action=tools", text)
+        self.assertIn("fallback_tool=web_search", text)
+        self.assertIn("attempted_tools=['fetch_url']", text)
         self.assertIn("reason=timeout", text)
 
 

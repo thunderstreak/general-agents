@@ -42,7 +42,7 @@
 - 使用 `unittest` 框架（非 pytest），测试类继承 `unittest.TestCase`
 - 测试文件放在 `tests/` 目录，命名为 `test_<模块>.py`
 - 用辅助函数构造 state 字典作为测试输入（参考 `test_output.py` 的 `_state()`）
-- 运行：`python -m pytest tests/` 或 `python -m unittest discover tests/`
+- 运行：`python -m unittest discover tests`
 
 ## 配置管理
 
@@ -66,11 +66,25 @@
 ## 文件输入
 
 - 用户输入支持 `@filepath` 语法引用文件
-- 支持格式：txt、md、json、csv、pdf、docx、xlsx、图片
+- 支持格式：txt、md、json、csv、pdf、docx、xlsx、图片（`.png`、`.jpg`、`.jpeg`、`.webp`）
+- 图片以 base64 data URL 多模态输入，需 `VISION_MODEL_NAME` 对应模型支持
 - 解析逻辑在 `agent_app/file_inputs/parser.py`
+
+## 会话管理
+
+- 历史会话存储在 `.agent_sessions/` 目录，每会话一个子目录
+- 每个会话含：`metadata.json`（摘要）、`state.json`（完整 Agent state）、`messages.jsonl`（可读日志）
+- CLI 内置命令：`/sessions`、`/resume <id>`、`/new`、`/delete <id>`、`/current`
+- 新增会话管理功能时，参考现有会话目录结构和 CLI 命令模式
+
+## 流式输出
+
+- CLI 默认开启流式输出，配置项 `CLI_STREAM=true`
+- 节点进度显示由 `CLI_STREAM_PROGRESS=true` 控制
+- 输入历史文件由 `CLI_INPUT_HISTORY_FILE` 配置（默认 `.agent_input_history`）
 
 ## 注意事项
 
-- `.env` 和 `.agent_memory.json` 已加入 `.gitignore`，不要提交
+- `.env`、`.agent_memory.json`、`.agent_sessions/`、`.agent_input_history` 已加入 `.gitignore`，不要提交
 - 编排步骤有上限（默认 8 步），通过 `ORCHESTRATOR_MAX_STEPS` 配置
 - `retrieval` 节点当前为占位符，仅关键字触发，未接入实际向量数据库

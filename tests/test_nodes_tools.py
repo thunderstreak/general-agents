@@ -34,6 +34,7 @@ class ToolNodeTest(unittest.TestCase):
         run_tool.assert_called_once()
         self.assertEqual(result["messages"][0].content, "抓取成功")
         self.assertEqual(result["tool_calls"][0]["tool_name"], "fetch_url")
+        self.assertEqual(result["attempted_tools"], ["fetch_url"])
         self.assertNotIn("last_error", result)
 
 

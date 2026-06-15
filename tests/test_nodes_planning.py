@@ -81,6 +81,26 @@ class PlanningNodeTest(unittest.TestCase):
 
         self.assertEqual(result["plan"]["mode"], "chat")
 
+    def test_planning_node_uses_reflection_fallback_tool(self):
+        """reflection 指定 fallback 工具时生成工具计划。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="总结 https://example.com")]
+        state["reflection"] = {
+            "status": "insufficient",
+            "next_action": "planning",
+            "fallback_tool_name": "web_search",
+            "reason": "fetch_url 抓取失败",
+            "loop_reason": "当前工具结果不足，切换到 web_search",
+        }
+
+        result = planning_node(state)
+
+        self.assertEqual(result["tool_selection"]["action"], "tool")
+        self.assertEqual(result["tool_selection"]["tool_name"], "web_search")
+        self.assertEqual(result["plan"]["mode"], "tool")
+        self.assertEqual(result["plan"]["plan_steps"][0]["tool_name"], "web_search")
+        self.assertEqual(result["plan"]["plan_steps"][0]["args"], {"query": "fetch_url 抓取失败"})
+
 
 if __name__ == "__main__":
     unittest.main()
