@@ -27,6 +27,7 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small
 FALLBACK_MODEL_NAME = os.getenv("FALLBACK_MODEL_NAME", "")
 MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "60"))
 MODEL_MAX_RETRIES = int(os.getenv("MODEL_MAX_RETRIES", "2"))
+MAX_FILE_SIZE_MB = float(os.getenv("MAX_FILE_SIZE_MB", "10"))
 
 MEMORY_FILE_PATH = os.getenv("MEMORY_FILE_PATH", ".agent_memory.json")
 MEMORY_MAX_ITEMS = int(os.getenv("MEMORY_MAX_ITEMS", "50"))

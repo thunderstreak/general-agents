@@ -10,6 +10,7 @@ from unittest.mock import patch
 from langchain_core.messages import HumanMessage
 
 from agent_app import cli, session_store
+from agent_app.state import create_initial_state, reset_turn_state
 
 
 class CliSessionCommandTest(unittest.TestCase):
@@ -78,7 +79,7 @@ class CliSessionCommandTest(unittest.TestCase):
             old = session_store.create_session(tmp_dir)
             session_store.save_session_state(old.session_id, {"messages": [HumanMessage(content="旧历史")]}, tmp_dir)
             new = session_store.create_session(tmp_dir)
-            new_state = cli._new_state()
+            new_state = create_initial_state()
 
             self.assertNotEqual(new.session_id, old.session_id)
             self.assertEqual(new_state["messages"], [])
@@ -87,12 +88,12 @@ class CliSessionCommandTest(unittest.TestCase):
 
     def test_reset_turn_state_clears_plan_and_reflection(self):
         """每轮开始时清空上一轮 plan 和 reflection。"""
-        state = cli._new_state()
+        state = create_initial_state()
         state["plan"] = {"mode": "tool"}
         state["reflection"] = {"status": "passed"}
         state["retrieval_results"] = [{"source": "old"}]
 
-        result = cli._reset_turn_state(state)
+        result = reset_turn_state(state)
 
         self.assertEqual(result["plan"], {})
         self.assertEqual(result["reflection"], {})

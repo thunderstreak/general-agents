@@ -10,6 +10,8 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 
+from agent_app.config import MAX_FILE_SIZE_MB
+
 
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".csv"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -48,6 +50,18 @@ def parse_file(path: str) -> FileParseResult:
     file_path = Path(path).expanduser()
     if not file_path.is_file():
         return FileParseResult(path=str(file_path), kind="error", error="文件不存在或不是普通文件。")
+
+    max_file_size_bytes = int(MAX_FILE_SIZE_MB * 1024 * 1024)
+    try:
+        file_size = file_path.stat().st_size
+    except OSError as exc:
+        return FileParseResult(path=str(file_path), kind="error", error=f"无法读取文件信息：{exc}")
+    if max_file_size_bytes >= 0 and file_size > max_file_size_bytes:
+        return FileParseResult(
+            path=str(file_path),
+            kind="error",
+            error=f"文件过大：{_format_size(file_size)}，超过限制 {_format_size(max_file_size_bytes)}。",
+        )
 
     suffix = file_path.suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
@@ -164,3 +178,11 @@ def _image_to_data_url(file_path: Path) -> str:
     mime_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
     encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
+
+
+def _format_size(size_bytes: int) -> str:
+    """格式化文件体积。"""
+    size_mb = size_bytes / 1024 / 1024
+    if size_mb >= 1:
+        return f"{size_mb:.2f} MB"
+    return f"{size_bytes / 1024:.2f} KB"

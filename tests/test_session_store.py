@@ -101,6 +101,20 @@ class SessionStoreTest(unittest.TestCase):
             self.assertTrue(session_store.delete_session(metadata.session_id, tmp_dir))
             self.assertFalse((Path(tmp_dir) / metadata.session_id).exists())
 
+    def test_session_dir_rejects_path_traversal(self):
+        """非法会话 ID 会被拒绝，避免路径穿越。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for session_id in ("../abc", "a/b", "..%2Fabc"):
+                with self.subTest(session_id=session_id):
+                    with self.assertRaises(ValueError):
+                        session_store._session_dir(tmp_dir, session_id)
+
+    def test_public_lookup_rejects_invalid_session_id_safely(self):
+        """公开查询和删除非法会话 ID 时返回失败，不抛给 CLI。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self.assertFalse(session_store.session_exists("../abc", tmp_dir))
+            self.assertFalse(session_store.delete_session("../abc", tmp_dir))
+
 
 if __name__ == "__main__":
     unittest.main()

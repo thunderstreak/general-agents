@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 
 ResponseStatus = Literal["success", "error", "confirmation_required"]
 ResponseType = Literal["message", "error", "confirmation"]
+TOOL_CALL_BLOCK_PATTERN = re.compile(r"<tool_call\b[^>]*>.*?</tool_call>", re.IGNORECASE | re.DOTALL)
+FUNCTION_BLOCK_PATTERN = re.compile(r"<function=[^>]+>.*?</function>", re.IGNORECASE | re.DOTALL)
+TOOL_CALL_TAG_PATTERN = re.compile(r"</?tool_call\b[^>]*>", re.IGNORECASE)
+PARAMETER_TAG_PATTERN = re.compile(r"</?parameter\b[^>]*>", re.IGNORECASE)
 
 
 def build_response(state: dict[str, Any]) -> dict[str, Any]:
     """根据 AgentState 构造统一响应。"""
     last_message = state["messages"][-1] if state.get("messages") else None
     content = getattr(last_message, "content", "") if last_message is not None else ""
+    content = sanitize_model_content(content)
     errors = _collect_errors(state)
     pending_confirmation = state.get("pending_confirmation") or {}
 
@@ -39,7 +45,7 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
 
 def render_cli_response(response: dict[str, Any], debug: bool = False) -> str:
     """渲染 CLI 输出文本。"""
-    lines = [f"Agent: {response.get('content', '')}"]
+    lines = [f"Agent: {sanitize_model_content(response.get('content', ''))}"]
 
     sources = response.get("retrieval_sources", [])
     if sources:
@@ -55,6 +61,18 @@ def render_cli_response(response: dict[str, Any], debug: bool = False) -> str:
         lines.extend(_render_debug_lines(response))
 
     return "\n".join(lines)
+
+
+def sanitize_model_content(content: Any) -> str:
+    """清理模型误输出的伪工具调用文本。"""
+    if isinstance(content, list):
+        content = "".join(str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("type") == "text")
+    text = str(content or "")
+    text = TOOL_CALL_BLOCK_PATTERN.sub("", text)
+    text = FUNCTION_BLOCK_PATTERN.sub("", text)
+    text = TOOL_CALL_TAG_PATTERN.sub("", text)
+    text = PARAMETER_TAG_PATTERN.sub("", text)
+    return text.strip()
 
 
 def _response_kind(errors: list[dict[str, Any]], pending_confirmation: dict[str, Any]) -> tuple[ResponseStatus, ResponseType]:

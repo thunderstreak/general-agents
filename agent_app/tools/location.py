@@ -15,18 +15,18 @@ TOOL_METADATA = ToolMetadata(
     trigger_keywords=("我在哪", "当前位置", "定位", "location", "ip"),
 )
 
+LOCATION_URLS = (
+    "https://ip-api.com/json/?lang=zh-CN",
+    "http://ip-api.com/json/?lang=zh-CN",
+)
+
 
 @tool
 def get_location() -> str:
     """通过当前公网 IP 查询大致位置。"""
-    try:
-        response = requests.get("http://ip-api.com/json/?lang=zh-CN", timeout=10)
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as exc:
-        return f"位置查询失败：{exc}"
-    except ValueError:
-        return "位置查询失败：定位服务返回的数据格式无法解析。"
+    data, error = _fetch_location_data()
+    if error:
+        return f"位置查询失败：{error}"
 
     if data.get("status") != "success":
         return f"位置查询失败：{data.get('message', '未知错误')}"
@@ -52,14 +52,26 @@ def get_location() -> str:
 
 def locate_city_by_ip() -> str:
     """通过公网 IP 获取城市名，失败时返回空字符串。"""
-    try:
-        response = requests.get("http://ip-api.com/json/?lang=zh-CN", timeout=10)
-        response.raise_for_status()
-        data = response.json()
-    except (requests.RequestException, ValueError):
+    data, error = _fetch_location_data()
+    if error:
         return ""
 
     if data.get("status") != "success":
         return ""
 
     return data.get("city", "")
+
+
+def _fetch_location_data() -> tuple[dict, str]:
+    """请求公网 IP 定位服务，优先 HTTPS 并集中处理降级。"""
+    last_error = ""
+    for url in LOCATION_URLS:
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json(), ""
+        except requests.RequestException as exc:
+            last_error = str(exc)
+        except ValueError:
+            return {}, "定位服务返回的数据格式无法解析。"
+    return {}, last_error or "定位服务请求失败。"

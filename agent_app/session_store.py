@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from dataclasses import asdict, dataclass
@@ -17,6 +18,7 @@ from agent_app.utils.messages import message_text
 
 
 STATE_VERSION = 1
+SAFE_SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass
@@ -117,7 +119,10 @@ def list_sessions(store_dir: str | Path = SESSION_STORE_DIR) -> list[SessionMeta
     for child in root.iterdir():
         if not child.is_dir():
             continue
-        metadata = load_session_metadata(child.name, root)
+        try:
+            metadata = load_session_metadata(child.name, root)
+        except ValueError:
+            continue
         if metadata is not None:
             sessions.append(metadata)
     return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
@@ -125,7 +130,10 @@ def list_sessions(store_dir: str | Path = SESSION_STORE_DIR) -> list[SessionMeta
 
 def delete_session(session_id: str, store_dir: str | Path = SESSION_STORE_DIR) -> bool:
     """删除会话目录。"""
-    session_dir = _session_dir(store_dir, session_id)
+    try:
+        session_dir = _session_dir(store_dir, session_id)
+    except ValueError:
+        return False
     if not session_dir.is_dir():
         return False
     shutil.rmtree(session_dir)
@@ -134,7 +142,10 @@ def delete_session(session_id: str, store_dir: str | Path = SESSION_STORE_DIR) -
 
 def session_exists(session_id: str, store_dir: str | Path = SESSION_STORE_DIR) -> bool:
     """判断会话是否存在。"""
-    return (_session_dir(store_dir, session_id) / "state.json").is_file()
+    try:
+        return (_session_dir(store_dir, session_id) / "state.json").is_file()
+    except ValueError:
+        return False
 
 
 def _state_to_json(state: dict[str, Any]) -> dict[str, Any]:
@@ -219,7 +230,14 @@ def _build_title(user_inputs: list[str]) -> str:
 
 def _session_dir(store_dir: str | Path, session_id: str) -> Path:
     """获取会话目录。"""
+    _validate_session_id(session_id)
     return Path(store_dir).expanduser() / session_id
+
+
+def _validate_session_id(session_id: str) -> None:
+    """校验会话 ID，避免路径穿越。"""
+    if not session_id or not SAFE_SESSION_ID_PATTERN.fullmatch(session_id):
+        raise ValueError("非法会话 ID，仅允许字母、数字、下划线和短横线。")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

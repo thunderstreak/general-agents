@@ -19,6 +19,8 @@ from agent_app.nodes import (
 from agent_app.state import AgentState
 from agent_app.tools import tool_metadata_by_name
 
+_app = None
+
 
 def router(state: AgentState) -> Literal["confirm", "tools", "error", "memory"]:
     """根据最后一条消息决定下一步。"""
@@ -90,4 +92,9 @@ def build_graph():
     return workflow.compile()
 
 
-app = build_graph()
+def get_app():
+    """获取缓存后的 LangGraph 应用。"""
+    global _app
+    if _app is None:
+        _app = build_graph()
+    return _app

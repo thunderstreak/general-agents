@@ -4,7 +4,7 @@ import importlib
 import unittest
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolCall
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
 from agent_app.nodes.agent import agent_node, invoke_tool_agent
 from tests.helpers import base_state
@@ -103,6 +103,18 @@ class AgentNodeTest(unittest.TestCase):
             agent_node(state)
 
         emit_progress.assert_not_called()
+
+    def test_agent_node_tool_summary_uses_nostream_tag(self):
+        """工具结果总结不应在流式阶段直接输出模型 token。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="长沙未来三天天气如何"), ToolMessage(content="天气结果", tool_call_id="tool_1")]
+
+        with patch("agent_app.nodes.agent.invoke_with_fallback", return_value=AIMessage(content="总结")) as invoke:
+            result = agent_node(state)
+
+        invoke.assert_called_once()
+        self.assertEqual(invoke.call_args.kwargs["tags"], ["nostream"])
+        self.assertEqual(result["messages"][0].content, "总结")
 
     def test_agent_node_tool_agent_plan_invokes_llm_with_tools(self):
         """tool_agent plan 调用绑定工具模型。"""

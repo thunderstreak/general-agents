@@ -3,7 +3,7 @@
 from agent_app.file_inputs import build_human_message, parse_user_input
 from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
 from agent_app import cli_stream
-from agent_app.graph import app, resume_confirmed_tool
+from agent_app.graph import get_app, resume_confirmed_tool
 from agent_app.session_store import create_session, delete_session, list_sessions, load_session_state, save_session_state, session_exists
 from agent_app.state import create_initial_state, ensure_state_defaults, reset_turn_state
 
@@ -21,7 +21,7 @@ def run_cli():
     """启动命令行 Agent。"""
     print("🧠 LangGraph Agent 启动 (输入 'quit' 退出)\n")
     session = create_session()
-    state = _new_state()
+    state = create_initial_state()
     _save_current_session(session.session_id, state)
     pending_delete_session_id = ""
 
@@ -40,7 +40,7 @@ def run_cli():
                 pending_delete_session_id = ""
                 if deleted_current:
                     session = create_session()
-                    state = _new_state()
+                    state = create_initial_state()
                     _save_current_session(session.session_id, state)
                     print(f"已切换到新会话：{session.session_id}\n")
                 continue
@@ -60,13 +60,13 @@ def run_cli():
         if state.get("pending_confirmation"):
             if user_input.lower() in {"yes", "y"}:
                 state = resume_confirmed_tool(state, approved=True)
-                state = _reset_turn_state(state)
+                state = reset_turn_state(state)
                 state = _run_turn(state)
                 _save_current_session(session.session_id, state)
                 continue
             if user_input.lower() in {"no", "n"}:
                 state = resume_confirmed_tool(state, approved=False)
-                state = _reset_turn_state(state)
+                state = reset_turn_state(state)
                 _print_response(state)
                 _save_current_session(session.session_id, state)
                 continue
@@ -76,14 +76,9 @@ def run_cli():
         # 保留多轮上下文，让工具调用和模型回复都在消息历史中连续出现
         text, file_results = parse_user_input(user_input)
         state["messages"].append(build_human_message(text, file_results))
-        state = _reset_turn_state(state)
+        state = reset_turn_state(state)
         state = _run_turn(state)
         _save_current_session(session.session_id, state)
-
-
-def _new_state() -> dict:
-    """创建新的 CLI Agent state。"""
-    return create_initial_state()
 
 
 def _read_user_input() -> str:
@@ -119,7 +114,7 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
 
     if command == "/new":
         session = create_session()
-        new_state = _new_state()
+        new_state = create_initial_state()
         _save_current_session(session.session_id, new_state)
         print(f"已创建并切换到新会话：{session.session_id}\n")
         return True, new_state, session.session_id, ""
@@ -131,7 +126,7 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
         if not session_exists(arg):
             print(f"会话不存在：{arg}\n")
             return True, state, session_id, ""
-        resumed_state = _ensure_state_defaults(load_session_state(arg))
+        resumed_state = ensure_state_defaults(load_session_state(arg))
         print(f"已恢复会话：{arg}\n")
         return True, resumed_state, arg, ""
 
@@ -147,16 +142,6 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
 
     print("未知命令。可用命令：/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
     return True, state, session_id, ""
-
-
-def _reset_turn_state(state: dict) -> dict:
-    """重置单轮编排状态，保留历史消息和长期记忆。"""
-    return reset_turn_state(state)
-
-
-def _ensure_state_defaults(state: dict) -> dict:
-    """补齐旧会话或损坏会话缺失的 state 字段。"""
-    return ensure_state_defaults(state)
 
 
 def _save_current_session(session_id: str, state: dict) -> None:
@@ -206,7 +191,7 @@ def _print_response(state: dict) -> None:
 def _run_turn(state: dict) -> dict:
     """按配置执行单轮对话。"""
     if not CLI_STREAM:
-        result = app.invoke(state)
+        result = get_app().invoke(state)
         _print_response(result)
         return result
 
@@ -217,4 +202,4 @@ def _stream_response(state: dict) -> dict:
     """流式执行 LangGraph 并渲染 CLI 输出。"""
     cli_stream.CLI_STREAM_PROGRESS = CLI_STREAM_PROGRESS
     cli_stream.OUTPUT_DEBUG = OUTPUT_DEBUG
-    return cli_stream.stream_response(app, state)
+    return cli_stream.stream_response(get_app(), state)

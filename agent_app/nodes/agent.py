@@ -40,10 +40,13 @@ def agent_node(state: AgentState):
                             "你正在根据工具返回结果回复用户。"
                             "如果工具结果已经包含答案，必须优先使用工具结果，不要因为工具入参为空而要求用户重复提供信息。"
                             "如果工具结果明确失败，再说明失败原因并给出下一步建议。"
+                            "禁止输出 XML、JSON 或 Markdown 形式的工具调用片段，例如 <tool_call>、<function=...>。"
+                            "如果还需要更多实时信息，只能用自然语言说明当前工具结果的限制。"
                         )
                     ),
                     *model_messages,
-                ]
+                ],
+                tags=["nostream"],
             )
         else:
             step = current_plan_step(state.get("plan") or {})

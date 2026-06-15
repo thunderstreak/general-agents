@@ -56,14 +56,19 @@ def get_fallback_model() -> ChatOpenAI | None:
     return _get_chat_model(FALLBACK_MODEL_NAME)
 
 
-def invoke_with_fallback(messages):
+def invoke_with_fallback(messages, tags: list[str] | None = None):
     """调用主聊天模型；失败时尝试 fallback 模型。"""
+    model = get_chat_model()
+    if tags:
+        model = model.with_config(tags=tags)
     try:
-        return get_chat_model().invoke(messages)
+        return model.invoke(messages)
     except Exception:
         fallback_model = get_fallback_model()
         if fallback_model is None:
             raise
+        if tags:
+            fallback_model = fallback_model.with_config(tags=tags)
         return fallback_model.invoke(messages)
 
 

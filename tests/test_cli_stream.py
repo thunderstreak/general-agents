@@ -40,7 +40,7 @@ class CliStreamTest(unittest.TestCase):
         """关闭流式时保留 invoke 执行路径。"""
         fake_app = FakeInvokeApp()
 
-        with patch.object(cli, "CLI_STREAM", False), patch.object(cli, "app", fake_app):
+        with patch.object(cli, "CLI_STREAM", False), patch.object(cli, "get_app", return_value=fake_app):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 result = cli._run_turn({"messages": []})
@@ -81,7 +81,7 @@ class CliStreamTest(unittest.TestCase):
         ]
 
         fake_app = FakeStreamApp(chunks)
-        with patch.object(cli, "app", fake_app), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+        with patch.object(cli, "get_app", return_value=fake_app), patch.object(cli, "CLI_STREAM_PROGRESS", True):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 result = cli._stream_response({"messages": []})
@@ -130,7 +130,7 @@ class CliStreamTest(unittest.TestCase):
             {"type": "values", "data": final_state},
         ]
 
-        with patch.object(cli, "app", FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 cli._stream_response({"messages": []})
@@ -147,7 +147,7 @@ class CliStreamTest(unittest.TestCase):
         }
         chunks = [{"type": "values", "data": final_state}]
 
-        with patch.object(cli, "app", FakeStreamApp(chunks)):
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 result = cli._stream_response({"messages": []})
@@ -174,7 +174,7 @@ class CliStreamTest(unittest.TestCase):
             {"type": "values", "data": final_state},
         ]
 
-        with patch.object(cli, "app", FakeStreamApp(chunks)), patch.object(cli, "OUTPUT_DEBUG", True):
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)), patch.object(cli, "OUTPUT_DEBUG", True):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 cli._stream_response({"messages": []})

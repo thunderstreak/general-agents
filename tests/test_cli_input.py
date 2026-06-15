@@ -59,7 +59,7 @@ class CliInputTest(unittest.TestCase):
         """run_cli 使用 _read_user_input，而不是直接 input。"""
         with (
             patch("agent_app.cli.create_session") as create_session,
-            patch("agent_app.cli._new_state", return_value={"messages": []}),
+            patch("agent_app.cli.create_initial_state", return_value={"messages": []}),
             patch("agent_app.cli._save_current_session"),
             patch("agent_app.cli._read_user_input", return_value="quit") as read_user_input,
             patch("builtins.input", side_effect=AssertionError("不应直接调用 input")),

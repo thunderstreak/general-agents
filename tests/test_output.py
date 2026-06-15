@@ -63,6 +63,29 @@ class OutputTest(unittest.TestCase):
 
         self.assertEqual(text, "Agent: 回答内容")
 
+    def test_build_response_sanitizes_fake_tool_call_markup(self):
+        """输出层会清理模型误吐的伪工具调用标签。"""
+        content = (
+            "长沙未来天气请参考工具结果。\n"
+            "<tool_call>\n"
+            "<function=search_internet>\n"
+            "<parameter=query>长沙未来三天天气预报</parameter>\n"
+            "</function>\n"
+            "</tool_call>"
+        )
+
+        response = build_response(_state(content))
+
+        self.assertEqual(response["content"], "长沙未来天气请参考工具结果。")
+
+    def test_render_cli_response_sanitizes_orphan_tool_call_tag(self):
+        """CLI 渲染会清理孤立的伪工具调用结束标签。"""
+        response = build_response(_state("回答</tool_call>"))
+
+        text = render_cli_response(response)
+
+        self.assertEqual(text, "Agent: 回答")
+
     def test_render_cli_debug_response(self):
         """CLI debug 渲染。"""
         state = _state("回答内容")
