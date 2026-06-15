@@ -23,7 +23,7 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
 
         if chunk_type == "custom":
             message = custom_progress_message(data)
-            if message and CLI_STREAM_PROGRESS and not printed_token:
+            if message and CLI_STREAM_PROGRESS:
                 printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
             continue
 

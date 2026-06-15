@@ -81,6 +81,10 @@ class ToolSelectorTest(unittest.TestCase):
         """天气输入优先筛选天气工具。"""
         self.assertEqual(candidate_tool_names_for_text("今天天气如何"), ["get_weather"])
 
+    def test_candidate_tools_detect_weather_forecast_only(self):
+        """未来天气输入优先筛选天气预报工具。"""
+        self.assertEqual(candidate_tool_names_for_text("长沙未来三天天气如何"), ["get_weather_forecast"])
+
     def test_candidate_tools_detect_market_search_only(self):
         """实时行情输入优先筛选网页搜索工具。"""
         self.assertEqual(candidate_tool_names_for_text("我想看今天的股票市场行情"), ["web_search"])

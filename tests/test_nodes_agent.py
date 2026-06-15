@@ -109,9 +109,12 @@ class AgentNodeTest(unittest.TestCase):
         state = base_state()
         state["messages"] = [HumanMessage(content="长沙未来三天天气如何"), ToolMessage(content="天气结果", tool_call_id="tool_1")]
 
-        with patch("agent_app.nodes.agent.invoke_with_fallback", return_value=AIMessage(content="总结")) as invoke:
+        with patch("agent_app.nodes.agent.invoke_with_fallback", return_value=AIMessage(content="总结")) as invoke, patch(
+            "agent_app.nodes.agent.emit_progress"
+        ) as emit_progress:
             result = agent_node(state)
 
+        emit_progress.assert_called_once_with("正在整理工具结果...", event="summary_started", node="agent")
         invoke.assert_called_once()
         self.assertEqual(invoke.call_args.kwargs["tags"], ["nostream"])
         self.assertEqual(result["messages"][0].content, "总结")

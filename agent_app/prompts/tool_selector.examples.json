@@ -21,6 +21,13 @@
     "reason": "用户询问当前位置"
   },
   {
+    "input": "长沙未来三天天气如何",
+    "expected_action": "tool",
+    "expected_tool_name": "get_weather_forecast",
+    "min_confidence": 0.7,
+    "reason": "用户询问未来三天天气预报"
+  },
+  {
     "input": "帮我搜索 LangGraph 是什么",
     "expected_action": "tool",
     "expected_tool_name": "web_search",

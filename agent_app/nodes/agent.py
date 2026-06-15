@@ -33,6 +33,7 @@ def agent_node(state: AgentState):
         model_messages = with_context(messages, memory_state, state.get("retrieval_results", []))
 
         if isinstance(messages[-1], ToolMessage):
+            emit_progress("正在整理工具结果...", event="summary_started", node="agent")
             response = invoke_with_fallback(
                 [
                     SystemMessage(

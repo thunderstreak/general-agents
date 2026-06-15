@@ -2,14 +2,16 @@
 
 from agent_app.tools.location import TOOL_METADATA as LOCATION_METADATA, get_location
 from agent_app.tools.url_fetch import TOOL_METADATA as URL_FETCH_METADATA, fetch_url
-from agent_app.tools.weather import TOOL_METADATA as WEATHER_METADATA, get_weather
+from agent_app.tools.weather import FORECAST_TOOL_METADATA, TOOL_METADATA as WEATHER_METADATA, get_weather, get_weather_forecast
 from agent_app.tools.web_search import TOOL_METADATA as WEB_SEARCH_METADATA, web_search
 
 
-tools = [get_location, get_weather, web_search, fetch_url]
+tools = [get_location, get_weather, get_weather_forecast, web_search, fetch_url]
 tools_by_name = {tool.name: tool for tool in tools}
-tool_metadata = [LOCATION_METADATA, WEATHER_METADATA, WEB_SEARCH_METADATA, URL_FETCH_METADATA]
+tool_metadata = [LOCATION_METADATA, WEATHER_METADATA, FORECAST_TOOL_METADATA, WEB_SEARCH_METADATA, URL_FETCH_METADATA]
 tool_metadata_by_name = {metadata.name: metadata for metadata in tool_metadata}
+
+FORECAST_KEYWORDS = ("未来", "预报", "明天", "后天", "三天", "3天", "一周", "forecast")
 
 
 def candidate_tool_names_for_text(text: str) -> list[str]:
@@ -22,6 +24,8 @@ def candidate_tool_names_for_text(text: str) -> list[str]:
     for metadata in tool_metadata:
         if any(str(keyword).lower() in normalized for keyword in metadata.trigger_keywords):
             candidates.append(metadata.name)
+    if "get_weather" in candidates and "get_weather_forecast" in candidates and any(keyword in normalized for keyword in FORECAST_KEYWORDS):
+        candidates = [name for name in candidates if name != "get_weather"]
     return candidates
 
 

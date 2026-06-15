@@ -139,6 +139,41 @@ class CliStreamTest(unittest.TestCase):
         self.assertIn("调用工具 get_weather...", output)
         self.assertIn("Agent: 完成", output)
 
+    def test_stream_response_prints_summary_progress_after_tool_done(self):
+        """工具完成后仍显示总结阶段进度。"""
+        final_state = {
+            "messages": [],
+            "final_response": {"content": "最终总结"},
+            "tool_calls": [],
+            "tool_errors": [],
+            "retrieval_results": [],
+            "last_error": {},
+            "pending_confirmation": {},
+            "memory_updated": False,
+            "trace_id": "trace",
+            "node_runs": [],
+            "step_count": 1,
+            "max_steps": 8,
+        }
+        chunks = [
+            {"type": "custom", "data": {"message": "工具 get_weather_forecast 调用完成。"}},
+            {"type": "custom", "data": {"message": "正在整理工具结果..."}},
+            {"type": "messages", "data": (AIMessageChunk(content="不应显示"), {"tags": ["nostream"]})},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                result = cli._stream_response({"messages": []})
+
+        output = buffer.getvalue()
+        self.assertEqual(result, final_state)
+        self.assertIn("工具 get_weather_forecast 调用完成。", output)
+        self.assertIn("正在整理工具结果...", output)
+        self.assertIn("Agent: 最终总结", output)
+        self.assertNotIn("不应显示", output)
+
     def test_stream_response_falls_back_when_no_tokens(self):
         """没有 token 时使用统一响应渲染。"""
         final_state = {
