@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessageChunk, ToolMessage
 
 from agent_app import cli
 
@@ -50,9 +50,10 @@ class CliStreamTest(unittest.TestCase):
         self.assertIn("Agent: 完成", buffer.getvalue())
 
     def test_message_chunk_text_filters_empty_tool_and_nostream_chunks(self):
-        """空内容、工具调用和 nostream 内部模型不输出。"""
+        """空内容、工具调用、工具消息和 nostream 内部模型不输出。"""
         self.assertEqual(cli._message_chunk_text((AIMessageChunk(content=""), {})), "")
         self.assertEqual(cli._message_chunk_text((AIMessageChunk(content="内部"), {"tags": ["nostream"]})), "")
+        self.assertEqual(cli._message_chunk_text((ToolMessage(content="工具结果", tool_call_id="tool_1"), {})), "")
         tool_chunk = AIMessageChunk(content="", tool_call_chunks=[{"name": "web_search", "args": "", "id": "1", "index": 0}])
         self.assertEqual(cli._message_chunk_text((tool_chunk, {})), "")
         self.assertEqual(cli._message_chunk_text((AIMessageChunk(content="你好"), {})), "你好")
@@ -101,11 +102,11 @@ class CliStreamTest(unittest.TestCase):
         self.assertEqual(cli._update_progress_message({"memory": {}}), "")
         self.assertEqual(cli._update_progress_message({"response": {}}), "")
 
-    def test_update_progress_keeps_state_fallbacks(self):
-        """确认、工具和错误节点仍保留兜底进度。"""
+    def test_update_progress_keeps_only_actionable_state_fallbacks(self):
+        """只保留需要用户感知的状态兜底进度。"""
         self.assertEqual(cli._update_progress_message({"confirm": {}}), "等待人工确认...")
-        self.assertEqual(cli._update_progress_message({"tools": {}}), "执行工具中...")
-        self.assertEqual(cli._update_progress_message({"reflection": {}}), "核对工具结果...")
+        self.assertEqual(cli._update_progress_message({"tools": {}}), "")
+        self.assertEqual(cli._update_progress_message({"reflection": {}}), "")
         self.assertEqual(cli._update_progress_message({"error": {}}), "生成错误响应...")
 
     def test_stream_response_prints_tool_custom_progress(self):
@@ -137,6 +138,45 @@ class CliStreamTest(unittest.TestCase):
 
         output = buffer.getvalue()
         self.assertIn("调用工具 get_weather...", output)
+        self.assertIn("Agent: 完成", output)
+
+    def test_stream_response_hides_generic_tool_and_reflection_updates(self):
+        """隐藏工具和反思兜底进度，保留具体 custom 进度。"""
+        final_state = {
+            "messages": [],
+            "final_response": {"content": "完成"},
+            "tool_calls": [],
+            "tool_errors": [],
+            "retrieval_results": [],
+            "last_error": {},
+            "pending_confirmation": {},
+            "memory_updated": False,
+            "trace_id": "trace",
+            "node_runs": [],
+            "step_count": 1,
+            "max_steps": 8,
+        }
+        chunks = [
+            {"type": "updates", "data": {"tools": {}}},
+            {"type": "custom", "data": {"message": "调用工具 get_weather...", "node": "tools", "event": "tool_started"}},
+            {"type": "custom", "data": {"message": "工具 get_weather 调用完成。", "node": "tools", "event": "tool_succeeded"}},
+            {"type": "updates", "data": {"reflection": {}}},
+            {"type": "custom", "data": {"message": "正在整理工具结果...", "node": "agent", "event": "summary_started"}},
+            {"type": "messages", "data": (AIMessageChunk(content="完成"), {"tags": []})},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                cli._stream_response({"messages": []})
+
+        output = buffer.getvalue()
+        self.assertNotIn("执行工具中...", output)
+        self.assertNotIn("核对工具结果...", output)
+        self.assertIn("调用工具 get_weather...", output)
+        self.assertIn("工具 get_weather 调用完成。", output)
+        self.assertIn("正在整理工具结果...", output)
         self.assertIn("Agent: 完成", output)
 
     def test_stream_response_prints_summary_progress_after_tool_done(self):
@@ -173,6 +213,87 @@ class CliStreamTest(unittest.TestCase):
         self.assertIn("正在整理工具结果...", output)
         self.assertIn("Agent: 最终总结", output)
         self.assertNotIn("不应显示", output)
+
+    def test_stream_response_hides_internal_memory_and_response_progress(self):
+        """记忆和响应收尾进度不应打印给用户。"""
+        final_state = {
+            "messages": [],
+            "final_response": {"content": "完成"},
+            "tool_calls": [],
+            "tool_errors": [],
+            "retrieval_results": [],
+            "last_error": {},
+            "pending_confirmation": {},
+            "memory_updated": True,
+            "trace_id": "trace",
+            "node_runs": [],
+            "step_count": 1,
+            "max_steps": 8,
+        }
+        chunks = [
+            {"type": "custom", "data": {"message": "更新记忆...", "node": "memory", "event": "progress"}},
+            {"type": "custom", "data": {"message": "整理响应...", "node": "response", "event": "progress"}},
+            {"type": "messages", "data": (AIMessageChunk(content="完成"), {"tags": []})},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                cli._stream_response({"messages": []})
+
+        output = buffer.getvalue()
+        self.assertNotIn("更新记忆...", output)
+        self.assertNotIn("整理响应...", output)
+        self.assertIn("Agent: 完成", output)
+
+    def test_stream_response_prints_pseudo_tool_call_preview_only(self):
+        """流式伪工具调用只展示核心参数，不展示 XML 标签。"""
+        final_state = {
+            "messages": [],
+            "final_response": {"content": "今日金价已查询。", "retrieval_sources": [], "tool_calls": [], "tool_summary": [], "errors": []},
+            "tool_calls": [],
+            "tool_errors": [],
+            "retrieval_results": [],
+            "last_error": {},
+            "pending_confirmation": {},
+            "memory_updated": False,
+            "trace_id": "trace",
+            "node_runs": [],
+            "step_count": 1,
+            "max_steps": 8,
+        }
+        chunks = [
+            {"type": "messages", "data": (AIMessageChunk(content="<tool"), {"tags": []})},
+            {"type": "messages", "data": (AIMessageChunk(content="_call>\n<function=web_search>\n"), {"tags": []})},
+            {
+                "type": "messages",
+                "data": (
+                    AIMessageChunk(content="<parameter=query>今日黄金价格 实时金价查询 2026年6月15日</parameter>\n"),
+                    {"tags": []},
+                ),
+            },
+            {"type": "messages", "data": (AIMessageChunk(content="<parameter=max_results>5</parameter>\n"), {"tags": []})},
+            {"type": "messages", "data": (AIMessageChunk(content="</function>\n</tool_call>"), {"tags": []})},
+            {"type": "custom", "data": {"message": "调用工具 web_search...", "node": "tools", "event": "tool_started"}},
+            {"type": "custom", "data": {"message": "工具 web_search 调用完成。", "node": "tools", "event": "tool_succeeded"}},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)), patch.object(cli, "CLI_STREAM_PROGRESS", True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                cli._stream_response({"messages": []})
+
+        output = buffer.getvalue()
+        self.assertIn("今日黄金价格 实时金价查询 2026年6月15日", output)
+        self.assertIn("调用工具 web_search...", output)
+        self.assertIn("工具 web_search 调用完成。", output)
+        self.assertIn("Agent: 今日金价已查询。", output)
+        self.assertNotIn("<tool_call>", output)
+        self.assertNotIn("<function=web_search>", output)
+        self.assertNotIn("<parameter=query>", output)
+        self.assertNotIn("max_results", output)
 
     def test_stream_response_falls_back_when_no_tokens(self):
         """没有 token 时使用统一响应渲染。"""

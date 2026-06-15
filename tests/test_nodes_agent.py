@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
-from agent_app.nodes.agent import agent_node, invoke_tool_agent
+from agent_app.nodes.agent import agent_node, invoke_tool_agent, parse_pseudo_tool_calls
 from tests.helpers import base_state
 
 
@@ -104,20 +104,29 @@ class AgentNodeTest(unittest.TestCase):
 
         emit_progress.assert_not_called()
 
-    def test_agent_node_tool_summary_uses_nostream_tag(self):
-        """工具结果总结不应在流式阶段直接输出模型 token。"""
+    def test_agent_node_tool_summary_streams_without_converting_pseudo_tool_call(self):
+        """工具结果总结可流式输出，但伪工具调用不应再次触发工具。"""
         state = base_state()
         state["messages"] = [HumanMessage(content="长沙未来三天天气如何"), ToolMessage(content="天气结果", tool_call_id="tool_1")]
+        pseudo_tool_call = AIMessage(
+            content=(
+                "<tool_call>"
+                "<function=web_search><parameter=query>长沙未来三天天气</parameter></function>"
+                "</tool_call>"
+            )
+        )
 
-        with patch("agent_app.nodes.agent.invoke_with_fallback", return_value=AIMessage(content="总结")) as invoke, patch(
+        with patch("agent_app.nodes.agent.invoke_with_fallback", return_value=pseudo_tool_call) as invoke, patch(
             "agent_app.nodes.agent.emit_progress"
         ) as emit_progress:
             result = agent_node(state)
 
         emit_progress.assert_called_once_with("正在整理工具结果...", event="summary_started", node="agent")
         invoke.assert_called_once()
-        self.assertEqual(invoke.call_args.kwargs["tags"], ["nostream"])
-        self.assertEqual(result["messages"][0].content, "总结")
+        self.assertNotIn("tags", invoke.call_args.kwargs)
+        self.assertEqual(result["messages"][0].content, pseudo_tool_call.content)
+        self.assertFalse(getattr(result["messages"][0], "tool_calls", []))
+        self.assertNotIn("last_tool_request", result)
 
     def test_agent_node_tool_agent_plan_invokes_llm_with_tools(self):
         """tool_agent plan 调用绑定工具模型。"""
@@ -145,6 +154,64 @@ class AgentNodeTest(unittest.TestCase):
 
         self.assertTrue(fake_model.called)
         self.assertEqual(result["messages"][0].content, "")
+
+    def test_agent_node_converts_pseudo_tool_call_to_real_tool_call(self):
+        """模型误吐的伪工具调用会转换为真实 tool_calls。"""
+        class FakeToolModel:
+            def with_config(self, tags):
+                self.tags = tags
+                return self
+
+            def invoke(self, messages):
+                return AIMessage(
+                    content=(
+                        "<tool_call>\n"
+                        "<function=web_search>\n"
+                        "<parameter=query>今日黄金价格</parameter>\n"
+                        "<parameter=max_results>5</parameter>\n"
+                        "</function>\n"
+                        "</tool_call>"
+                    )
+                )
+
+        state = base_state()
+        state["messages"] = [HumanMessage(content="今天金价")]
+        state["plan"] = {
+            "intent": "tool_agent",
+            "mode": "tool_agent",
+            "plan_steps": [{"step_id": "step_1", "action": "tool_agent", "tool_name": "", "args": {}, "reason": "需要实时价格"}],
+            "current_step": 0,
+            "decision_reason": "需要实时价格",
+            "candidate_tool_names": ["web_search"],
+            "status": "ready",
+        }
+        fake_model = FakeToolModel()
+
+        with patch("agent_app.nodes.agent.get_chat_llm") as get_chat_llm:
+            get_chat_llm.return_value.bind_tools.return_value = fake_model
+            result = agent_node(state)
+
+        tool_calls = result["messages"][0].tool_calls
+        self.assertEqual(tool_calls[0]["name"], "web_search")
+        self.assertEqual(tool_calls[0]["args"], {"query": "今日黄金价格"})
+        self.assertEqual(result["last_tool_request"]["tool_calls"][0]["name"], "web_search")
+        self.assertEqual(result["attempted_tools"], ["web_search"])
+        self.assertEqual(fake_model.tags, ["nostream"])
+
+    def test_parse_pseudo_tool_calls_ignores_unknown_tools(self):
+        """伪工具调用只接受已注册工具。"""
+        content = (
+            "<tool_call>"
+            "<function=unknown_tool><parameter=query>test</parameter></function>"
+            "<function=web_search><parameter=query>LangGraph</parameter></function>"
+            "</tool_call>"
+        )
+
+        tool_calls = parse_pseudo_tool_calls(content)
+
+        self.assertEqual(len(tool_calls), 1)
+        self.assertEqual(tool_calls[0]["name"], "web_search")
+        self.assertEqual(tool_calls[0]["args"], {"query": "LangGraph"})
 
     def test_invoke_tool_agent_binds_candidate_tools_only(self):
         """tool_agent 只绑定 plan 中记录的候选工具。"""

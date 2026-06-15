@@ -1,6 +1,8 @@
 """Agent 生成节点。"""
 
+import re
 import time
+from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolCall, ToolMessage
 
@@ -15,6 +17,9 @@ from agent_app.tools import tools, tools_by_name
 
 _chat_llm = None
 _llm_with_tools = None
+PSEUDO_TOOL_CALL_PATTERN = re.compile(r"<tool_call\b[^>]*>.*?</tool_call>", re.IGNORECASE | re.DOTALL)
+PSEUDO_FUNCTION_PATTERN = re.compile(r"<function=([^>\s]+)>(.*?)</function>", re.IGNORECASE | re.DOTALL)
+PSEUDO_PARAMETER_PATTERN = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.IGNORECASE | re.DOTALL)
 
 
 def agent_node(state: AgentState):
@@ -32,7 +37,8 @@ def agent_node(state: AgentState):
         memory_state = state.get("long_term_memory", {})
         model_messages = with_context(messages, memory_state, state.get("retrieval_results", []))
 
-        if isinstance(messages[-1], ToolMessage):
+        is_tool_summary = isinstance(messages[-1], ToolMessage)
+        if is_tool_summary:
             emit_progress("正在整理工具结果...", event="summary_started", node="agent")
             response = invoke_with_fallback(
                 [
@@ -46,8 +52,7 @@ def agent_node(state: AgentState):
                         )
                     ),
                     *model_messages,
-                ],
-                tags=["nostream"],
+                ]
             )
         else:
             step = current_plan_step(state.get("plan") or {})
@@ -57,12 +62,14 @@ def agent_node(state: AgentState):
                 response = tool_selection_to_message(step["tool_name"], step.get("args") or {})
             elif action == "tool_agent":
                 emit_progress("需要外部信息，准备调用工具...", node="agent")
-                response = invoke_tool_agent(model_messages, state.get("plan") or {})
+                response = invoke_tool_agent(model_messages, state.get("plan") or {}, tags=["nostream"])
             elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
                 response = get_llm_with_tools().invoke(model_messages)
 
+        if not is_tool_summary:
+            response = normalize_pseudo_tool_call_response(response)
         state_update = {**step_update, "messages": [response], "node_runs": [node_run("agent", start_time)]}
         if getattr(response, "tool_calls", None):
             state_update["last_tool_request"] = {"tool_calls": response.tool_calls}
@@ -84,13 +91,74 @@ def tool_selection_to_message(tool_name: str, tool_args: dict):
     return AIMessage(content="", tool_calls=[tool_call])
 
 
-def invoke_tool_agent(model_messages: list, plan: dict):
+def invoke_tool_agent(model_messages: list, plan: dict, tags: list[str] | None = None):
     """调用绑定候选工具的模型，候选为空时回退到全量工具。"""
     candidate_names = plan.get("candidate_tool_names") if isinstance(plan, dict) else []
     candidate_tools = [tools_by_name[name] for name in candidate_names if name in tools_by_name] if isinstance(candidate_names, list) else []
     if not candidate_tools:
-        return get_llm_with_tools().invoke(model_messages)
-    return get_chat_llm().bind_tools(candidate_tools).invoke(model_messages)
+        model = get_llm_with_tools()
+    else:
+        model = get_chat_llm().bind_tools(candidate_tools)
+    if tags:
+        model = _with_tags(model, tags)
+    return model.invoke(model_messages)
+
+
+def normalize_pseudo_tool_call_response(response):
+    """把模型误吐的伪工具调用转换为真正的 tool_calls。"""
+    if getattr(response, "tool_calls", None):
+        return response
+
+    content = getattr(response, "content", "")
+    tool_calls = parse_pseudo_tool_calls(content)
+    if not tool_calls:
+        return response
+
+    return AIMessage(content="", tool_calls=tool_calls)
+
+
+def parse_pseudo_tool_calls(content: Any) -> list[ToolCall]:
+    """从伪 XML 工具调用文本中解析 tool_calls。"""
+    text = _message_content_text(content)
+    if not text:
+        return []
+
+    calls = []
+    for block_match in PSEUDO_TOOL_CALL_PATTERN.finditer(text):
+        block = block_match.group(0)
+        for function_match in PSEUDO_FUNCTION_PATTERN.finditer(block):
+            tool_name = function_match.group(1).strip()
+            if tool_name not in tools_by_name:
+                continue
+            tool_args = _parse_pseudo_tool_args(tool_name, function_match.group(2))
+            calls.append(ToolCall(name=tool_name, args=tool_args, id=f"pseudo_{tool_name}_{len(calls) + 1}"))
+    return calls
+
+
+def _parse_pseudo_tool_args(tool_name: str, body: str) -> dict[str, Any]:
+    """解析并按工具 schema 过滤参数。"""
+    allowed_args = set((getattr(tools_by_name[tool_name], "args", None) or {}).keys())
+    args: dict[str, Any] = {}
+    for match in PSEUDO_PARAMETER_PATTERN.finditer(body):
+        name = match.group(1).strip()
+        if allowed_args and name not in allowed_args:
+            continue
+        args[name] = match.group(2).strip()
+    return args
+
+
+def _message_content_text(content: Any) -> str:
+    """将消息 content 转成纯文本。"""
+    if isinstance(content, list):
+        return "".join(str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("type") == "text")
+    return str(content or "")
+
+
+def _with_tags(model, tags: list[str]):
+    """为支持配置的模型附加 stream 标签。"""
+    if hasattr(model, "with_config"):
+        return model.with_config(tags=tags)
+    return model
 
 
 def get_chat_llm():
