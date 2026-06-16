@@ -12,6 +12,7 @@ tool_metadata = [LOCATION_METADATA, WEATHER_METADATA, FORECAST_TOOL_METADATA, WE
 tool_metadata_by_name = {metadata.name: metadata for metadata in tool_metadata}
 
 FORECAST_KEYWORDS = ("未来", "预报", "明天", "后天", "三天", "3天", "一周", "forecast")
+WEATHER_CONTEXT_KEYWORDS = ("天气", "气温", "下雨", "weather")
 
 
 def candidate_tool_names_for_text(text: str) -> list[str]:
@@ -24,6 +25,10 @@ def candidate_tool_names_for_text(text: str) -> list[str]:
     for metadata in tool_metadata:
         if any(str(keyword).lower() in normalized for keyword in metadata.trigger_keywords):
             candidates.append(metadata.name)
+    if any(name in candidates for name in {"get_weather", "get_weather_forecast"}) and not any(
+        keyword in normalized for keyword in WEATHER_CONTEXT_KEYWORDS
+    ):
+        candidates = [name for name in candidates if name not in {"get_weather", "get_weather_forecast"}]
     if "get_weather" in candidates and "get_weather_forecast" in candidates and any(keyword in normalized for keyword in FORECAST_KEYWORDS):
         candidates = [name for name in candidates if name != "get_weather"]
     return candidates

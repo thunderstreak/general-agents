@@ -13,6 +13,7 @@ from agent_app.nodes.planning import current_plan_step
 from agent_app.orchestrator import error_state
 from agent_app.state import AgentState
 from agent_app.tools import tools, tools_by_name
+from agent_app.utils.messages import message_text
 
 
 _chat_llm = None
@@ -63,6 +64,7 @@ def agent_node(state: AgentState):
             elif action == "tool_agent":
                 emit_progress("需要外部信息，准备调用工具...", node="agent")
                 response = invoke_tool_agent(model_messages, state.get("plan") or {}, tags=["nostream"])
+                response = fallback_tool_agent_response(response, state)
             elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
@@ -104,6 +106,37 @@ def invoke_tool_agent(model_messages: list, plan: dict, tags: list[str] | None =
     return model.invoke(model_messages)
 
 
+def fallback_tool_agent_response(response, state: AgentState):
+    """工具模式下模型未调用工具时，生成确定性兜底工具调用。"""
+    if getattr(response, "tool_calls", None):
+        return response
+    pseudo_tool_calls = parse_pseudo_tool_calls(getattr(response, "content", ""))
+    if pseudo_tool_calls:
+        return AIMessage(content="", tool_calls=pseudo_tool_calls)
+
+    tool_call = fallback_tool_call(state)
+    if tool_call:
+        return AIMessage(content="", tool_calls=[tool_call])
+    return response
+
+
+def fallback_tool_call(state: AgentState) -> ToolCall | None:
+    """根据 plan 候选工具生成安全兜底调用。"""
+    plan = state.get("plan") or {}
+    candidate_names = plan.get("candidate_tool_names") if isinstance(plan, dict) else []
+    if not isinstance(candidate_names, list):
+        candidate_names = []
+    user_text = _latest_user_text(state)
+
+    if "web_search" in candidate_names:
+        return ToolCall(name="web_search", args={"query": user_text}, id="fallback_web_search")
+    if "fetch_url" in candidate_names:
+        url = _first_url(user_text)
+        if url:
+            return ToolCall(name="fetch_url", args={"url": url}, id="fallback_fetch_url")
+    return None
+
+
 def normalize_pseudo_tool_call_response(response):
     """把模型误吐的伪工具调用转换为真正的 tool_calls。"""
     if getattr(response, "tool_calls", None):
@@ -133,6 +166,23 @@ def parse_pseudo_tool_calls(content: Any) -> list[ToolCall]:
             tool_args = _parse_pseudo_tool_args(tool_name, function_match.group(2))
             calls.append(ToolCall(name=tool_name, args=tool_args, id=f"pseudo_{tool_name}_{len(calls) + 1}"))
     return calls
+
+
+def _latest_user_text(state: AgentState) -> str:
+    """获取最近用户输入文本。"""
+    input_context = state.get("input_context") or {}
+    if input_context.get("normalized_text"):
+        return str(input_context["normalized_text"])
+    for message in reversed(state.get("messages", [])):
+        if getattr(message, "type", "") == "human":
+            return message_text(message)
+    return ""
+
+
+def _first_url(text: str) -> str:
+    """提取文本中的第一个 URL。"""
+    match = re.search(r"https?://[^\s，。)）]+", text)
+    return match.group(0) if match else ""
 
 
 def _parse_pseudo_tool_args(tool_name: str, body: str) -> dict[str, Any]:

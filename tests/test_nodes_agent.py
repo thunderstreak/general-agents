@@ -198,6 +198,39 @@ class AgentNodeTest(unittest.TestCase):
         self.assertEqual(result["attempted_tools"], ["web_search"])
         self.assertEqual(fake_model.tags, ["nostream"])
 
+    def test_agent_node_tool_agent_falls_back_to_web_search_call(self):
+        """工具模式下模型未调用工具时兜底生成搜索工具调用。"""
+        class FakeToolModel:
+            def with_config(self, tags):
+                self.tags = tags
+                return self
+
+            def invoke(self, messages):
+                return AIMessage(content="未来金价可能上涨。")
+
+        state = base_state()
+        state["messages"] = [HumanMessage(content="做一个未来3-6个月的金价预测")]
+        state["input_context"] = {"normalized_text": "做一个未来3-6个月的金价预测"}
+        state["plan"] = {
+            "intent": "tool_agent",
+            "mode": "tool_agent",
+            "plan_steps": [{"step_id": "step_1", "action": "tool_agent", "tool_name": "", "args": {}, "reason": "需要外部信息"}],
+            "current_step": 0,
+            "decision_reason": "需要外部信息",
+            "candidate_tool_names": ["web_search"],
+            "status": "ready",
+        }
+        fake_model = FakeToolModel()
+
+        with patch("agent_app.nodes.agent.get_chat_llm") as get_chat_llm:
+            get_chat_llm.return_value.bind_tools.return_value = fake_model
+            result = agent_node(state)
+
+        tool_calls = result["messages"][0].tool_calls
+        self.assertEqual(tool_calls[0]["name"], "web_search")
+        self.assertEqual(tool_calls[0]["args"], {"query": "做一个未来3-6个月的金价预测"})
+        self.assertEqual(result["attempted_tools"], ["web_search"])
+
     def test_parse_pseudo_tool_calls_ignores_unknown_tools(self):
         """伪工具调用只接受已注册工具。"""
         content = (
