@@ -3,5 +3,7 @@
 .agent_input_history
 .agent_sessions/
 .agent_knowledge/
+.claude/
+models/
 __pycache__/
 *.pyc

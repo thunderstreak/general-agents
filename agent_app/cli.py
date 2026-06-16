@@ -3,6 +3,7 @@
 from agent_app.file_inputs import build_human_message, parse_user_input
 from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
 from agent_app import cli_stream
+from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel
 from agent_app.graph import get_app, resume_confirmed_tool
 from agent_app.rag import (
     KnowledgeBaseError,
@@ -28,7 +29,7 @@ _print_debug_tail = cli_stream.print_debug_tail
 
 def run_cli():
     """启动命令行 Agent。"""
-    print("🧠 LangGraph Agent 启动 (输入 'quit' 退出)\n")
+    print("🧠 LangGraph Agent 启动 (输入 'quit' 退出，任务运行中按 Esc 取消)\n")
     session = create_session()
     state = create_initial_state()
     _save_current_session(session.session_id, state)
@@ -70,7 +71,12 @@ def run_cli():
             if user_input.lower() in {"yes", "y"}:
                 state = resume_confirmed_tool(state, approved=True)
                 state = reset_turn_state(state)
-                state = _run_turn(state)
+                try:
+                    state = _run_turn_cancellable(state)
+                except TaskCancelled:
+                    state = reset_turn_state(state)
+                    _save_current_session(session.session_id, state)
+                    continue
                 _save_current_session(session.session_id, state)
                 continue
             if user_input.lower() in {"no", "n"}:
@@ -84,9 +90,16 @@ def run_cli():
 
         # 保留多轮上下文，让工具调用和模型回复都在消息历史中连续出现
         text, file_results = parse_user_input(user_input)
+        message_count_before_turn = len(state.get("messages", []))
         state["messages"].append(build_human_message(text, file_results))
         state = reset_turn_state(state)
-        state = _run_turn(state)
+        try:
+            state = _run_turn_cancellable(state)
+        except TaskCancelled:
+            state["messages"] = state.get("messages", [])[:message_count_before_turn]
+            state = reset_turn_state(state)
+            _save_current_session(session.session_id, state)
+            continue
         _save_current_session(session.session_id, state)
 
 
@@ -114,7 +127,10 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
     command, _, arg = text.partition(" ")
     arg = arg.strip()
     if command == "/rag":
-        _handle_rag_command(arg)
+        try:
+            _handle_rag_command(arg)
+        except TaskCancelled:
+            pass
         return True, state, session_id, ""
 
     if command == "/sessions":
@@ -167,7 +183,7 @@ def _handle_rag_command(arg: str) -> None:
         if not value:
             print("用法：/rag add <文件路径>\n")
             return
-        _rag_add(value)
+        _run_cancellable(lambda: _rag_add(value))
         return
 
     if subcommand == "list":
@@ -182,15 +198,15 @@ def _handle_rag_command(arg: str) -> None:
         return
 
     if subcommand == "clear":
-        _rag_clear()
+        _run_cancellable(_rag_clear)
         return
 
     if subcommand == "sync":
-        _rag_sync()
+        _run_cancellable(_rag_sync)
         return
 
     if subcommand == "rebuild":
-        _rag_rebuild()
+        _run_cancellable(_rag_rebuild)
         return
 
     print("RAG 命令：/rag add <文件路径>、/rag list、/rag delete <document_id>、/rag clear、/rag sync、/rag rebuild\n")
@@ -315,6 +331,16 @@ def _run_turn(state: dict) -> dict:
         return result
 
     return _stream_response(state)
+
+
+def _run_turn_cancellable(state: dict) -> dict:
+    """执行可取消的单轮任务。"""
+    return _run_cancellable(lambda: _run_turn(state))
+
+
+def _run_cancellable(fn):
+    """执行可取消任务。"""
+    return run_with_esc_cancel(fn)
 
 
 def _stream_response(state: dict) -> dict:

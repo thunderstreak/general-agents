@@ -110,25 +110,29 @@ def add_document(path: str) -> dict[str, Any]:
         }
         langchain_documents.append(Document(page_content=chunk, metadata=metadata))
         chunk_records.append({**metadata, "content": chunk})
-    _vector_store().add_documents(langchain_documents, ids=chunk_ids)
+    try:
+        _vector_store().add_documents(langchain_documents, ids=chunk_ids)
 
-    now = time.time()
-    created_at = float(current.get("created_at", now)) if current else now
-    document = KnowledgeDocument(
-        document_id=document_id,
-        title=file_path.name,
-        path=str(file_path),
-        content_hash=content_hash,
-        created_at=created_at,
-        updated_at=now,
-        chunk_count=len(chunk_ids),
-        chunk_ids=chunk_ids,
-        active=True,
-    ).to_dict()
-    documents[document_id] = document
-    _save_documents(documents)
-    _replace_chunk_records(document_id, chunk_records)
-    return {"status": "added" if not current else "updated", "document": document}
+        now = time.time()
+        created_at = float(current.get("created_at", now)) if current else now
+        document = KnowledgeDocument(
+            document_id=document_id,
+            title=file_path.name,
+            path=str(file_path),
+            content_hash=content_hash,
+            created_at=created_at,
+            updated_at=now,
+            chunk_count=len(chunk_ids),
+            chunk_ids=chunk_ids,
+            active=True,
+        ).to_dict()
+        documents[document_id] = document
+        _save_documents(documents)
+        _replace_chunk_records(document_id, chunk_records)
+        return {"status": "added" if not current else "updated", "document": document}
+    except KeyboardInterrupt:
+        _rollback_document_import(document_id, chunk_ids, current, documents)
+        raise
 
 
 def list_documents() -> list[dict[str, Any]]:
@@ -395,6 +399,17 @@ def _remove_chunk_records(document_id: str) -> None:
     """删除单个文档的 chunk metadata。"""
     records = [item for item in _load_chunk_records() if item.get("document_id") != document_id]
     _save_chunk_records(records)
+
+
+def _rollback_document_import(document_id: str, chunk_ids: list[str], previous_document: dict | None, documents: dict[str, dict[str, Any]]) -> None:
+    """导入被取消时尽量回滚新写入内容。"""
+    _delete_vectors(chunk_ids)
+    _remove_chunk_records(document_id)
+    if previous_document:
+        documents[document_id] = previous_document
+    else:
+        documents.pop(document_id, None)
+    _save_documents(documents)
 
 
 def _document_id(path: Path) -> str:

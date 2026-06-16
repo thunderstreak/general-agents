@@ -23,41 +23,45 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
     printed_progress: set[str] = set()
     display_filter = PseudoToolCallDisplayFilter()
 
-    for chunk in app.stream(state, stream_mode=["messages", "updates", "custom", "values"], version="v2"):
-        chunk_type = stream_chunk_type(chunk)
-        data = stream_chunk_data(chunk)
+    try:
+        for chunk in app.stream(state, stream_mode=["messages", "updates", "custom", "values"], version="v2"):
+            chunk_type = stream_chunk_type(chunk)
+            data = stream_chunk_data(chunk)
 
-        if chunk_type == "values" and isinstance(data, dict):
-            latest_state = data
-            continue
-
-        if chunk_type == "custom":
-            message = custom_progress_message(data)
-            if message and should_print_custom_progress(data) and CLI_STREAM_PROGRESS:
-                status_visible = clear_initial_status(status_visible)
-                printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
-            continue
-
-        if chunk_type == "updates":
-            message = update_progress_message(data)
-            if message and CLI_STREAM_PROGRESS and not printed_token:
-                status_visible = clear_initial_status(status_visible)
-                printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
-            continue
-
-        if chunk_type == "messages":
-            token, tool_call_preview = display_filter.feed(message_chunk_text(data))
-            if tool_call_preview and CLI_STREAM_PROGRESS:
-                status_visible = clear_initial_status(status_visible)
-                printed_agent_prefix = print_progress(tool_call_preview, printed_agent_prefix, printed_progress)
-            if not token:
+            if chunk_type == "values" and isinstance(data, dict):
+                latest_state = data
                 continue
-            status_visible = clear_initial_status(status_visible)
-            if not printed_agent_prefix:
-                print("Agent: ", end="", flush=True)
-                printed_agent_prefix = True
-            print(token, end="", flush=True)
-            printed_token = True
+
+            if chunk_type == "custom":
+                message = custom_progress_message(data)
+                if message and should_print_custom_progress(data) and CLI_STREAM_PROGRESS:
+                    status_visible = clear_initial_status(status_visible)
+                    printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
+                continue
+
+            if chunk_type == "updates":
+                message = update_progress_message(data)
+                if message and CLI_STREAM_PROGRESS and not printed_token:
+                    status_visible = clear_initial_status(status_visible)
+                    printed_agent_prefix = print_progress(message, printed_agent_prefix, printed_progress)
+                continue
+
+            if chunk_type == "messages":
+                token, tool_call_preview = display_filter.feed(message_chunk_text(data))
+                if tool_call_preview and CLI_STREAM_PROGRESS:
+                    status_visible = clear_initial_status(status_visible)
+                    printed_agent_prefix = print_progress(tool_call_preview, printed_agent_prefix, printed_progress)
+                if not token:
+                    continue
+                status_visible = clear_initial_status(status_visible)
+                if not printed_agent_prefix:
+                    print("Agent: ", end="", flush=True)
+                    printed_agent_prefix = True
+                print(token, end="", flush=True)
+                printed_token = True
+    except KeyboardInterrupt:
+        clear_initial_status(status_visible)
+        raise
 
     token, tool_call_preview = display_filter.flush()
     if tool_call_preview and CLI_STREAM_PROGRESS:

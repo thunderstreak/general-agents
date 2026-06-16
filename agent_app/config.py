@@ -55,6 +55,7 @@ WEB_SEARCH_SEARCH_DEPTH = os.getenv("WEB_SEARCH_SEARCH_DEPTH", "basic")
 OUTPUT_DEBUG = os.getenv("OUTPUT_DEBUG", "false").lower() in {"1", "true", "yes", "y"}
 CLI_STREAM = os.getenv("CLI_STREAM", "true").lower() in {"1", "true", "yes", "y"}
 CLI_STREAM_PROGRESS = os.getenv("CLI_STREAM_PROGRESS", "true").lower() in {"1", "true", "yes", "y"}
+CLI_ESC_CANCEL = os.getenv("CLI_ESC_CANCEL", "true").lower() in {"1", "true", "yes", "y"}
 CLI_INPUT_HISTORY_FILE = os.getenv("CLI_INPUT_HISTORY_FILE", ".agent_input_history")
 
 SESSION_STORE_DIR = os.getenv("SESSION_STORE_DIR", ".agent_sessions")

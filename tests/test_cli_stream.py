@@ -335,6 +335,19 @@ class CliStreamTest(unittest.TestCase):
 
         self.assertNotIn("处理中...", buffer.getvalue())
 
+    def test_stream_response_clears_initial_status_on_cancel(self):
+        """流式执行取消时清除临时状态。"""
+        class CancelApp:
+            def stream(self, state, **kwargs):
+                raise KeyboardInterrupt()
+
+        buffer = io.StringIO()
+        with patch.object(cli, "get_app", return_value=CancelApp()), redirect_stdout(buffer):
+            with self.assertRaises(KeyboardInterrupt):
+                cli._stream_response({"messages": []})
+
+        self.assertIn("\r\033[2K", buffer.getvalue())
+
     def test_stream_debug_tail_does_not_repeat_answer(self):
         """流式 debug 尾部不应重复打印回答正文。"""
         final_state = {

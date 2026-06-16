@@ -79,6 +79,23 @@ class RagStoreTest(unittest.TestCase):
         self.assertEqual(count, 0)
         vector_store.assert_not_called()
 
+    def test_add_document_rolls_back_on_cancel(self):
+        """导入被取消时会回滚本轮 metadata。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            file_path = Path(tmp_dir) / "demo.md"
+            file_path.write_text("取消测试", encoding="utf-8")
+            vector_store = MagicMock()
+            vector_store.add_documents.side_effect = KeyboardInterrupt()
+
+            with _patch_rag_dirs(tmp_dir), patch("agent_app.rag.store._vector_store", return_value=vector_store):
+                with self.assertRaises(KeyboardInterrupt):
+                    store.add_document(str(file_path))
+                documents = store.list_documents()
+                chunks = store._load_chunk_records()
+
+        self.assertEqual(documents, [])
+        self.assertEqual(chunks, [])
+
     def test_search_knowledge_formats_results(self):
         """检索结果会转换为 retrieval_results 结构。"""
         document = Document(

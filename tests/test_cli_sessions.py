@@ -120,6 +120,16 @@ class CliSessionCommandTest(unittest.TestCase):
         self.assertTrue(handled)
         self.assertIn("已导入", buffer.getvalue())
 
+    def test_rag_command_cancel_does_not_escape_command_handler(self):
+        """RAG 命令取消后仍视为已处理。"""
+        with patch("agent_app.cli._handle_rag_command", side_effect=cli.TaskCancelled("cancel")):
+            handled, state, session_id, pending_delete = cli._handle_cli_command("/rag add demo.md", {"messages": []}, "session")
+
+        self.assertTrue(handled)
+        self.assertEqual(state, {"messages": []})
+        self.assertEqual(session_id, "session")
+        self.assertEqual(pending_delete, "")
+
     def test_rag_sync_command(self):
         """`/rag sync` 同步知识库。"""
         summary = {"checked": 1, "updated": 1, "unchanged": 0, "missing": 0, "failed": 0}
@@ -141,6 +151,14 @@ class CliSessionCommandTest(unittest.TestCase):
 
         self.assertTrue(handled)
         self.assertIn("知识库重建完成", buffer.getvalue())
+
+    def test_run_turn_cancellable_raises_task_cancelled(self):
+        """单轮执行取消时抛出 TaskCancelled。"""
+        with patch("agent_app.cli._run_turn", side_effect=KeyboardInterrupt):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                with self.assertRaises(cli.TaskCancelled):
+                    cli._run_turn_cancellable({"messages": []})
 
 
 def _patch_store_dir(tmp_dir: str):

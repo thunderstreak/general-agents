@@ -83,7 +83,7 @@ python index.py
 启动后会看到：
 
 ```text
-LangGraph Agent 启动 (输入 'quit' 退出)
+LangGraph Agent 启动 (输入 'quit' 退出，任务运行中按 Esc 取消)
 ```
 
 输入问题即可对话，输入 `quit` 退出。
@@ -163,7 +163,7 @@ URL 内容抓取：
 | `CHROMA_PERSIST_DIR` | 否 | `.agent_knowledge/chroma` | Chroma 向量索引持久化目录。 |
 | `CHROMA_COLLECTION_NAME` | 否 | `agent_knowledge` | Chroma collection 名称。 |
 | `RAG_EMBEDDING_PROVIDER` | 否 | `huggingface` | RAG embedding 提供方，支持 `huggingface` 或 `openai`。本地 OpenAI-compatible embedding 服务请设为 `openai`。 |
-| `RAG_EMBEDDING_MODEL` | 否 | `BAAI/bge-small-zh-v1.5` | RAG embedding 模型名。provider 为 `openai` 时填写服务端模型名。 |
+| `RAG_EMBEDDING_MODEL` | 否 | `BAAI/bge-small-zh-v1.5` | RAG embedding 模型名。provider 为 `huggingface` 时可填写 HuggingFace 模型名或本地模型目录；provider 为 `openai` 时填写服务端模型名。 |
 | `RAG_EMBEDDING_BASE_URL` | 否 | `BASE_URL` | RAG embedding OpenAI-compatible 服务地址，可单独指向本地 LM 服务。 |
 | `RAG_EMBEDDING_API_KEY` | 否 | `OPENAI_API_KEY` | RAG embedding API key。本地服务不校验时可填任意非空值。 |
 | `RAG_CHUNK_SIZE` | 否 | `800` | RAG 文本切分 chunk 大小。 |
@@ -177,6 +177,7 @@ URL 内容抓取：
 | `OUTPUT_DEBUG` | 否 | `false` | 是否在 CLI 输出 trace、节点耗时、工具摘要和错误详情。 |
 | `CLI_STREAM` | 否 | `true` | 是否开启 CLI 流式输出。关闭后会等待整轮执行完成再输出。 |
 | `CLI_STREAM_PROGRESS` | 否 | `true` | 流式输出时是否显示检索、工具调用、记忆更新等进度。 |
+| `CLI_ESC_CANCEL` | 否 | `true` | 是否允许任务运行中按 `Esc` 取消当前任务。macOS/Linux 终端默认可用。 |
 | `CLI_INPUT_HISTORY_FILE` | 否 | `.agent_input_history` | CLI 输入历史文件，用于支持上下键查看历史输入。 |
 | `SESSION_STORE_DIR` | 否 | `.agent_sessions` | 文件夹式历史会话存储目录。 |
 | `SESSION_AUTO_SAVE` | 否 | `true` | 是否在每轮对话后自动保存当前会话。 |
@@ -330,6 +331,49 @@ CLI 支持在用户输入中使用 `@文件路径` 引用本地文件。
 
 检索时会先从 Chroma 取候选片段，再使用本地关键词命中做轻量 rerank；输出来源中包含 `score`、`vector_score`、`keyword_score`、`chunk_id`、页码或 sheet 等 metadata。
 
+### RAG Embedding 模式
+
+RAG 支持两种 embedding 模式。
+
+第一种是 HuggingFace 本地模型模式，适合离线或不依赖本地 LM 服务的场景。当前项目已支持把模型放到项目目录：
+
+```text
+models/bge-small-zh-v1.5/
+```
+
+`.env` 配置：
+
+```dotenv
+RAG_EMBEDDING_PROVIDER=huggingface
+RAG_EMBEDDING_MODEL=./models/bge-small-zh-v1.5
+```
+
+首次从 HuggingFace 下载时，如果网络不稳定，可以先用镜像下载到项目目录：
+
+```bash
+HF_ENDPOINT=https://hf-mirror.com huggingface-cli download BAAI/bge-small-zh-v1.5 \
+  --local-dir ./models/bge-small-zh-v1.5
+```
+
+也可以从默认 cache 复制到项目目录：
+
+```bash
+mkdir -p models/bge-small-zh-v1.5
+cp -RL ~/.cache/huggingface/hub/models--BAAI--bge-small-zh-v1.5/snapshots/<snapshot-id>/. \
+  models/bge-small-zh-v1.5/
+```
+
+`models/` 已加入 `.gitignore`，不要提交模型文件。离线验证：
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 venv/bin/python - <<'PY'
+from langchain_huggingface import HuggingFaceEmbeddings
+
+emb = HuggingFaceEmbeddings(model_name="./models/bge-small-zh-v1.5")
+print(len(emb.embed_query("测试")))
+PY
+```
+
 如果使用本地 OpenAI-compatible embedding 服务，例如 LM Studio 的 `/v1/embeddings`，可以这样配置：
 
 ```dotenv
@@ -337,6 +381,13 @@ RAG_EMBEDDING_PROVIDER=openai
 RAG_EMBEDDING_MODEL=text-embedding-bge-small-zh-v1.5
 RAG_EMBEDDING_BASE_URL=http://127.0.0.1:1234/v1
 RAG_EMBEDDING_API_KEY=not-needed
+```
+
+切换 embedding 模式或模型后，需要重建知识库索引，因为不同 embedding 模型的向量空间不兼容：
+
+```text
+/rag clear
+/rag add docs/rag.md
 ```
 
 ## 长期记忆
@@ -436,6 +487,18 @@ OPENAI_API_KEY=your-api-key
 ### 工具调用失败
 
 天气、定位、网页搜索和 URL 抓取依赖外部网络服务。`web_search` 需要配置 `TAVILY_API_KEY`；如果网络不可用、服务限流、配置缺失或目标站点限制访问，工具可能返回失败信息。
+
+### 如何取消等待很久的任务
+
+任务运行中可以按 `Esc` 取消当前任务，CLI 会回到下一次 `你: ` 输入提示，不会退出程序。
+
+适用场景：
+
+- 模型回答等待太久。
+- 工具调用等待太久。
+- `/rag add`、`/rag sync`、`/rag rebuild` 等知识库任务等待太久。
+
+`Esc` 只在任务运行中生效，不影响正常输入时的中文编辑和方向键。`Ctrl+C` 也可以作为兜底取消当前任务。输入 `quit` 只用于正常退出 CLI，只有回到输入提示时才会生效。
 
 ### macOS 中文输入无法删除或移动光标
 
