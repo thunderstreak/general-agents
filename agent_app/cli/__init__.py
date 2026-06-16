@@ -13,14 +13,12 @@ from agent_app.config import (
 )
 from agent_app.cli import stream as cli_stream
 from agent_app.cli.cancel import TaskCancelled, run_with_esc_cancel_worker
-from agent_app.cli.compact import CompactOperations, auto_compact_if_needed, format_context_usage, format_usage_delta, handle_compact_command
+from agent_app.cli.compact import CompactOperations, auto_compact_if_needed, handle_compact_command
 from agent_app.cli.memory import MemoryOperations, handle_memory_command
 from agent_app.cli.rag import RagOperations, handle_rag_command
 from agent_app.cli.sessions import (
     SessionOperations,
     handle_session_command,
-    print_current_session,
-    print_sessions,
     session_metadata_or_current,
 )
 from agent_app.context_compaction import compact_state, estimate_context_usage, should_auto_compact
@@ -195,16 +193,6 @@ def _auto_compact_if_needed(state: dict, session_id: str) -> dict:
     return auto_compact_if_needed(state, session_id, _compact_operations())
 
 
-def _format_context_usage(state: dict) -> str:
-    """格式化上下文使用量提示。"""
-    return format_context_usage(state, _compact_operations())
-
-
-def _format_usage_delta(before_usage, after_usage) -> str:
-    """格式化压缩前后使用率变化。"""
-    return format_usage_delta(before_usage, after_usage)
-
-
 def _compact_operations() -> CompactOperations:
     """构造上下文压缩依赖。"""
     return CompactOperations(
@@ -224,16 +212,6 @@ def _save_current_session(session_id: str, state: dict, archived_messages: list 
     if not SESSION_AUTO_SAVE:
         return
     save_session_state(session_id, state, archived_messages=archived_messages)
-
-
-def _print_sessions() -> None:
-    """打印会话列表。"""
-    print_sessions(_session_operations())
-
-
-def _print_current_session(session_id: str) -> None:
-    """打印当前会话。"""
-    print_current_session(session_id, _session_operations())
 
 
 def _session_metadata_or_current(session_id: str, current_session):
