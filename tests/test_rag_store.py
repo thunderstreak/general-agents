@@ -137,6 +137,17 @@ class RagStoreTest(unittest.TestCase):
         self.assertIn("vector_score", results[0])
         self.assertIn("keyword_score", results[0])
 
+    def test_list_documents_fills_legacy_metadata_fields(self):
+        """列出旧 metadata 时会补齐展示字段。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with _patch_rag_dirs(tmp_dir):
+                store._save_documents({"doc1": {"document_id": "doc1", "active": True, "updated_at": 1}})
+                documents = store.list_documents()
+
+        self.assertEqual(documents[0]["title"], "doc1")
+        self.assertEqual(documents[0]["path"], "")
+        self.assertEqual(documents[0]["chunk_count"], 0)
+
     def test_search_knowledge_emits_stage_progress(self):
         """检索时输出 RAG 阶段进度。"""
         document = Document(page_content="LangGraph 支持 StateGraph。", metadata={"source": "/tmp/demo.md"})

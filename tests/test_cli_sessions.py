@@ -111,6 +111,16 @@ class CliSessionCommandTest(unittest.TestCase):
         self.assertTrue(handled)
         self.assertIn("doc1", buffer.getvalue())
 
+    def test_rag_list_command_handles_legacy_metadata(self):
+        """`/rag list` 遇到旧 metadata 时不崩溃。"""
+        with patch("agent_app.cli.list_documents", return_value=[{"document_id": "doc1", "active": True, "updated_at": 1}]):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/rag list", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("doc1", buffer.getvalue())
+
     def test_rag_add_command(self):
         """`/rag add` 导入知识库文档。"""
         document = {"document_id": "doc1", "title": "demo.md", "chunk_count": 2}

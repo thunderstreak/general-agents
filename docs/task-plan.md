@@ -10,7 +10,7 @@
 | 安全与权限 | 已完成基础防护 | P0 | 敏感配置通过 `.env` 管理；工具运行时已有白名单检查；URL Fetch 禁止 localhost、内网 IP 和 metadata 地址；确认节点已预留并支持需要确认的工具 | 增加更细粒度权限策略、危险工具确认、API key 脱敏日志、上传文件大小/类型限制、临时目录清理、路径隔离和输入过滤 |
 | 感知理解 | 已完成基础节点 | P1 | 已新增 `perception_node`，统一生成 `input_context`，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 触发信号和候选工具名；CLI 仍负责 `@文件路径` 解析 | 后续增加模型能力校验、输入事件结构、API 文件上传复用和更细多模态判断 |
 | Prompt 管理 | 已完成 | P1 | 工具选择 prompt 已拆分到 `agent_app/prompts/`，并提供样例文件；历史 Intent Router prompt 已清理 | 后续可继续增加版本管理和环境区分 |
-| 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；当工具模式模型未产生真实 `tool_calls` 时，会对 `web_search`/`fetch_url` 生成确定性 fallback tool call；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
+| 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；当工具模式模型未产生真实 `tool_calls` 时，会对 `web_search`/`fetch_url` 生成确定性 fallback tool call；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问、plan 推进和 LangGraph `Send` map-reduce 式 sub-agent 协作编排 |
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`get_weather_forecast`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；`web_search` 已改为 Tavily Search API；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
 | State 状态管理 | 已完成 | P1 | `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐；state 已包含 `messages`、`input_context`、`tool_selection`、`plan`、`reflection`、`tool_calls`、`conversation_summary` 和压缩计数等字段 | 后续随 RAG 和长期记忆继续扩展字段 |
 | LLM 大模型 | 已完成 | P1 | 统一 `agent_app/llm.py` 管理聊天、工具选择、视觉模型和 OpenAI embedding 辅助函数；graph/tool selector 已改为延迟初始化模型；LLM 调用前后会检查取消标记；CLI 支持 `@文件路径` 输入文本、文档、表格和图片 | 后续可继续补 token/cost 统计和更细模型能力检测 |
@@ -18,7 +18,7 @@
 | Memory 记忆 | 已完成但检索弱 | P2 | `messages` 保存短期上下文；长期记忆会把用户明确要求记住的信息、偏好和历史摘要写入本地 JSON v2 schema，并在模型调用前注入上下文；长期记忆条目包含 `mem_` 前缀稳定 ID；CLI 已支持 `/memory list`、`/memory delete <memory_id>`、`/memory clear`；会话上下文压缩已支持 `/compact`、自动压缩、摘要注入和归档 | 增加隐私策略、长期记忆语义检索和更细粒度存储 |
 | 反思评估 | 已完成基础闭环 | P2 | `reflection_node` 已优先基于结构化工具结果决策，支持结果不足判断、参数缺失追问、临时错误重试、不可重试失败、停止原因、`fetch_url -> web_search` 换工具和 planning 联动；关键词判断仅作旧记录兼容 | 后续增强 LLM Judge、更多工具 fallback 和复杂结果质量判断 |
 | 循环迭代控制 | 已完成基础结构 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；reflection 可路由到 agent/tools/planning/response/error，并记录 retry/stop/loop reason 和 attempted tools | 增加更细的工具级 retry policy 和多步 plan 推进 |
-| Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes/` 按领域拆分节点实现；支持 perception/retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 多步 plan 推进和更细可观测性 |
+| Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes/` 按领域拆分节点实现；支持 perception/retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 多步 plan 推进、更细可观测性和进程内 sub-agent 并行协作编排 |
 | 数据存储 | 已实现基础会话保存 | P2 | 已有 `.agent_memory.json` 长期记忆和 `.agent_sessions/` 文件夹式会话历史；每个会话保存 state、可读消息日志和压缩归档；RAG 文档/chunk metadata 与 Chroma 向量索引已本地持久化；工具运行记录和 trace 尚未独立持久化 | 补齐工具运行记录、节点 trace、用户配置和数据清理能力 |
 | 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已迁入 `agent_app/cli/stream.py`，debug 只在最终 `final_response` 后输出 | 后续增加 API/前端输出适配，API 复用 `final_response` 并用 SSE event 承载流式 token/progress |
 | CLI 交互体验 | 已完成基础体验 | P3 | 使用 `prompt_toolkit` 改善中文输入、方向键和历史；任务运行通过 worker thread 执行，Esc/Ctrl+C 可让 CLI 立即停止等待并回到输入提示；普通输入阶段 Ctrl+C 不打印 traceback | 后续隔离后台 worker 输出，必要时升级为 worker process + IPC 输出队列 |
@@ -103,6 +103,8 @@
    - [x] 当 tool-agent 未产生真实工具调用时，针对 `web_search` 和 `fetch_url` 生成 fallback tool call，避免“提示调用工具但未调用”。
    - [ ] 支持多步任务拆解、参数补全和低置信度追问。
    - [ ] 扩展 `plan_steps` 和 `current_step` 的推进逻辑。
+   - [ ] 识别复杂任务并生成 `mode="collaboration"`，普通任务继续走现有 `planning -> agent` 链路。
+   - [ ] 生成固定角色协作计划：`researcher`、`executor`、`analyst`、`writer`、`critic`，不让模型动态发明角色。
 
 4. [x] Tool 工具调用
    - [x] 增加工具元数据和统一错误格式。
@@ -124,6 +126,8 @@
    - [ ] 扩展 `AgentState`，保存 loop reason 和 stop reason。
    - [ ] 抽象文本、文件、会话命令和 API 请求为统一 input event。
    - [ ] 让 CLI `@文件路径` 和后续 API 文件上传复用同一套解析入口。
+   - [ ] 增加 `collaboration_plan`、`subagent_tasks`、`active_subagent_task`、`subagent_results` 和 `collaboration_summary` 字段。
+   - [ ] `subagent_results` 使用 `Annotated[list, operator.add]` reducer 汇总 LangGraph `Send` 并行结果。
 
 6. [x] LLM 大模型
    - [x] 增加按用途配置多模型。
@@ -219,6 +223,10 @@
    - [ ] 增强更多工具 fallback、工具级 retry policy 和多步 plan 推进。
    - [ ] 对缺少必要参数的工具调用先生成追问，而不是直接失败。
    - [ ] 支持多工具/多意图任务的顺序执行和结果聚合。
+   - [ ] 增加 `supervisor_node`、`subagent_worker_node`、`aggregate_evidence_node`、`writer_node` 和 `critic_node`。
+   - [ ] 使用 `from langgraph.types import Send` 实现 `researcher` 与 `executor` 的 map 阶段并行执行。
+   - [ ] reduce 阶段按 `aggregate_evidence -> analyst -> writer -> critic` 串行汇总、分析、写作和校验。
+   - [ ] `critic` 不通过时最多允许 `writer` 修订一次，避免进入无限重写循环。
    - [x] 增加文件夹式会话历史保存和手动恢复。
 
 4. 数据存储
@@ -330,6 +338,32 @@
        }
        ```
      - [ ] SSE 事件格式：`event: progress` 表示阶段进度；`event: token` 携带 `{"delta": "..."}`；`event: final` 携带完整响应 envelope；`event: error` 携带统一错误结构。
+
+## Sub-Agent 协作编排计划
+
+第一版使用进程内 sub-agent，不引入独立进程 Agent、消息队列或 IPC；复杂任务才进入协作分支，普通任务继续走现有 `planning -> agent` 链路。
+
+推荐流程：
+
+```text
+perception -> retrieval -> planning
+  -> supervisor
+  -> Send(researcher) + Send(executor)
+  -> aggregate_evidence
+  -> analyst
+  -> writer
+  -> critic
+  -> memory
+  -> response
+```
+
+角色分工：
+
+- `researcher`：负责检索、网页、RAG 资料整理，输出事实、来源和限制。
+- `executor`：负责工具调用、结构化操作，输出工具结果摘要和错误信息。
+- `analyst`：负责分析、比较、判断，基于 `researcher` 和 `executor` 的结果提炼结论。
+- `writer`：负责最终表达、格式整理，只基于汇总材料和分析结论生成回答草稿。
+- `critic`：负责检查遗漏、冲突、低质量结果；不通过时给出修订建议，最多触发一次 `writer` 修订。
 
 ## 当前结论
 

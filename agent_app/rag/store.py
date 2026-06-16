@@ -129,7 +129,7 @@ def add_document(path: str) -> dict[str, Any]:
 
 def list_documents() -> list[dict[str, Any]]:
     """列出 active 知识库文档。"""
-    documents = [item for item in _load_documents().values() if item.get("active", True)]
+    documents = [_normalize_document_metadata(item) for item in _load_documents().values() if item.get("active", True)]
     return sorted(documents, key=lambda item: item.get("updated_at", 0), reverse=True)
 
 
@@ -347,6 +347,17 @@ def _raw_collection():
 def _load_documents() -> dict[str, dict[str, Any]]:
     """读取文档 metadata。"""
     return load_documents(RAG_STORE_DIR)
+
+
+def _normalize_document_metadata(document: dict[str, Any]) -> dict[str, Any]:
+    """补齐旧版本或残缺文档 metadata 的展示字段。"""
+    normalized = dict(document)
+    source_path = str(normalized.get("path") or normalized.get("source") or "")
+    fallback_title = Path(source_path).name if source_path else str(normalized.get("document_id") or "未知文档")
+    normalized["title"] = str(normalized.get("title") or fallback_title)
+    normalized["path"] = source_path
+    normalized["chunk_count"] = int(normalized.get("chunk_count") or len(normalized.get("chunk_ids") or []))
+    return normalized
 
 
 def _save_documents(documents: dict[str, dict[str, Any]]) -> None:

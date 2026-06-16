@@ -81,7 +81,11 @@ def _rag_list(operations: RagOperations) -> None:
 
     print("知识库文档：")
     for item in documents:
-        print(f"- {item['document_id']} | {item['title']} | {item['chunk_count']} 个片段 | {item['path']}")
+        document_id = item.get("document_id", "未知 ID")
+        title = item.get("title") or item.get("source") or document_id
+        chunk_count = item.get("chunk_count", 0)
+        path = item.get("path") or item.get("source") or ""
+        print(f"- {document_id} | {title} | {chunk_count} 个片段 | {path}")
     print()
 
 
