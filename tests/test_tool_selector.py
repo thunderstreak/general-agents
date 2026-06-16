@@ -63,11 +63,12 @@ class ToolSelectorTest(unittest.TestCase):
         self.assertTrue(should_enter_tool_mode("我想看今天的股票市场行情"))
         self.assertTrue(should_enter_tool_mode("做一个未来3-6个月的金价预测"))
 
-    def test_should_enter_tool_mode_detects_rag_file_and_memory(self):
-        """RAG、文件和记忆信号进入工具模式。"""
-        self.assertTrue(should_enter_tool_mode("根据知识库回答 LangGraph 是什么"))
-        self.assertTrue(should_enter_tool_mode("总结 [文件: docs/task-plan.md]"))
-        self.assertTrue(should_enter_tool_mode("请记住我喜欢中文回答"))
+    def test_should_enter_tool_mode_ignores_local_context_and_memory(self):
+        """RAG、文件和记忆信号不进入外部工具模式。"""
+        self.assertFalse(should_enter_tool_mode("根据知识库回答 LangGraph 是什么"))
+        self.assertFalse(should_enter_tool_mode("总结 [文件: docs/task-plan.md]"))
+        self.assertFalse(should_enter_tool_mode("请记住我喜欢中文回答"))
+        self.assertFalse(should_enter_tool_mode("请记住当前设计里不要引入数据库"))
 
     def test_should_enter_tool_mode_detects_url(self):
         """URL 输入进入工具模式。"""

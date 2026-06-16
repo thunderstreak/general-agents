@@ -1,9 +1,19 @@
 """命令行交互入口。"""
 
 from agent_app.file_inputs import build_human_message, parse_user_input
-from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
+from agent_app.config import (
+    CLI_INPUT_HISTORY_FILE,
+    CLI_STREAM,
+    CLI_STREAM_PROGRESS,
+    CONTEXT_COMPACT_ENABLED,
+    CONTEXT_COMPACT_KEEP_TURNS,
+    CONTEXT_COMPACT_MESSAGE_THRESHOLD,
+    OUTPUT_DEBUG,
+    SESSION_AUTO_SAVE,
+)
 from agent_app import cli_stream
 from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel_worker
+from agent_app.context_compaction import compact_state, should_auto_compact
 from agent_app.graph import get_app, resume_confirmed_tool
 from agent_app.rag import (
     KnowledgeBaseError,
@@ -95,6 +105,8 @@ def run_cli():
             print("请输入 yes 确认执行，或 no 取消。\n")
             continue
 
+        state = _auto_compact_if_needed(state, session.session_id)
+
         # 保留多轮上下文，让工具调用和模型回复都在消息历史中连续出现
         text, file_results = parse_user_input(user_input)
         message_count_before_turn = len(state.get("messages", []))
@@ -140,6 +152,9 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
             pass
         return True, state, session_id, ""
 
+    if command == "/compact":
+        return _handle_compact_command(arg, state, session_id)
+
     if command == "/sessions":
         _print_sessions()
         return True, state, session_id, ""
@@ -176,8 +191,45 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
         print(f"确认删除会话 {arg}？请输入 yes 确认，或 no 取消。\n")
         return True, state, session_id, arg
 
-    print("未知命令。可用命令：/rag、/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
+    print("未知命令。可用命令：/rag、/compact、/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
     return True, state, session_id, ""
+
+
+def _handle_compact_command(arg: str, state: dict, session_id: str) -> tuple[bool, dict, str, str]:
+    """处理上下文压缩命令。"""
+    subcommand = arg.strip()
+    if subcommand == "show":
+        summary = str(state.get("conversation_summary") or "").strip()
+        if summary:
+            print(f"当前会话摘要：\n{summary}\n")
+        else:
+            print("当前会话暂无压缩摘要。\n")
+        return True, state, session_id, ""
+
+    if subcommand == "clear":
+        state = dict(state)
+        state["conversation_summary"] = ""
+        state["compact_count"] = 0
+        state["last_compacted_at"] = ""
+        _save_current_session(session_id, state)
+        print("已清空当前会话摘要。已压缩移除的短期上下文不会自动恢复。\n")
+        return True, state, session_id, ""
+
+    if subcommand:
+        print("用法：/compact、/compact show、/compact clear\n")
+        return True, state, session_id, ""
+
+    try:
+        result = _run_cancellable(lambda: compact_state(state, keep_turns=CONTEXT_COMPACT_KEEP_TURNS))
+    except TaskCancelled:
+        return True, state, session_id, ""
+    if not result.archived_messages:
+        print("当前上下文无需压缩。\n")
+        return True, result.state, session_id, ""
+
+    _save_current_session(session_id, result.state, archived_messages=result.archived_messages)
+    print(f"已压缩上下文：保留最近 {CONTEXT_COMPACT_KEEP_TURNS} 轮，摘要长度 {len(result.summary)} 字。\n")
+    return True, result.state, session_id, ""
 
 
 def _handle_rag_command(arg: str) -> None:
@@ -286,11 +338,28 @@ def _rag_rebuild() -> None:
     )
 
 
-def _save_current_session(session_id: str, state: dict) -> None:
+def _auto_compact_if_needed(state: dict, session_id: str) -> dict:
+    """按阈值自动压缩上下文。"""
+    if not CONTEXT_COMPACT_ENABLED or not should_auto_compact(state, CONTEXT_COMPACT_MESSAGE_THRESHOLD):
+        return state
+
+    try:
+        result = _run_cancellable(lambda: compact_state(state, keep_turns=CONTEXT_COMPACT_KEEP_TURNS))
+    except TaskCancelled:
+        return state
+    if not result.archived_messages:
+        return state
+
+    _save_current_session(session_id, result.state, archived_messages=result.archived_messages)
+    print(f"已自动压缩上下文：保留最近 {CONTEXT_COMPACT_KEEP_TURNS} 轮，摘要长度 {len(result.summary)} 字。\n")
+    return result.state
+
+
+def _save_current_session(session_id: str, state: dict, archived_messages: list | None = None) -> None:
     """按配置保存当前会话。"""
     if not SESSION_AUTO_SAVE:
         return
-    save_session_state(session_id, state)
+    save_session_state(session_id, state, archived_messages=archived_messages)
 
 
 def _print_sessions() -> None:

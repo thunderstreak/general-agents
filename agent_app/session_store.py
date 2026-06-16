@@ -52,10 +52,16 @@ def create_session(store_dir: str | Path = SESSION_STORE_DIR) -> SessionMetadata
     _write_json(session_dir / "metadata.json", metadata.to_dict())
     _write_json(session_dir / "state.json", {"version": STATE_VERSION, "state": {}})
     (session_dir / "messages.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "messages.archive.jsonl").write_text("", encoding="utf-8")
     return metadata
 
 
-def save_session_state(session_id: str, state: dict[str, Any], store_dir: str | Path = SESSION_STORE_DIR) -> SessionMetadata:
+def save_session_state(
+    session_id: str,
+    state: dict[str, Any],
+    store_dir: str | Path = SESSION_STORE_DIR,
+    archived_messages: list[Any] | None = None,
+) -> SessionMetadata:
     """保存完整 state、可读消息日志和元数据。"""
     session_dir = _session_dir(store_dir, session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -80,6 +86,7 @@ def save_session_state(session_id: str, state: dict[str, Any], store_dir: str | 
     _write_json(session_dir / "state.json", {"version": STATE_VERSION, "state": serializable_state})
     _write_json(session_dir / "metadata.json", metadata.to_dict())
     _write_messages_jsonl(session_dir / "messages.jsonl", messages)
+    _append_messages_jsonl(session_dir / "messages.archive.jsonl", archived_messages or [])
     return metadata
 
 
@@ -173,6 +180,20 @@ def _state_from_json(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _write_messages_jsonl(path: Path, messages: list[Any]) -> None:
     """写入便于人工查看的消息日志。"""
+    path.write_text(_messages_jsonl(messages), encoding="utf-8")
+
+
+def _append_messages_jsonl(path: Path, messages: list[Any]) -> None:
+    """追加归档消息日志。"""
+    if not messages:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        file.write(_messages_jsonl(messages))
+
+
+def _messages_jsonl(messages: list[Any]) -> str:
+    """转换消息为 JSONL 文本。"""
     lines = []
     if isinstance(messages, list):
         for index, message in enumerate(messages, start=1):
@@ -188,7 +209,7 @@ def _write_messages_jsonl(path: Path, messages: list[Any]) -> None:
                     ensure_ascii=False,
                 )
             )
-    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 def _message_role(message: Any) -> str:

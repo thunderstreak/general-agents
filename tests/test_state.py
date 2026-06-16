@@ -25,6 +25,9 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["last_tool_request"], {})
         self.assertEqual(state["attempted_tools"], [])
         self.assertEqual(state["long_term_memory"]["summary"], "摘要")
+        self.assertEqual(state["conversation_summary"], "")
+        self.assertEqual(state["compact_count"], 0)
+        self.assertEqual(state["last_compacted_at"], "")
         self.assertIn("node_runs", state)
 
     def test_reset_turn_state_clears_turn_fields(self):
@@ -33,6 +36,9 @@ class AgentStateTest(unittest.TestCase):
             messages=[HumanMessage(content="你好")],
             input_context={"normalized_text": "旧输入"},
             long_term_memory={"summary": "保留"},
+            conversation_summary="会话摘要",
+            compact_count=2,
+            last_compacted_at="2026-01-01T00:00:00",
             plan={"mode": "tool"},
             reflection={"status": "passed"},
             last_tool_request={"tool_calls": [{"name": "get_weather"}]},
@@ -48,6 +54,9 @@ class AgentStateTest(unittest.TestCase):
 
         self.assertEqual(result["messages"][0].content, "你好")
         self.assertEqual(result["long_term_memory"], {"summary": "保留"})
+        self.assertEqual(result["conversation_summary"], "会话摘要")
+        self.assertEqual(result["compact_count"], 2)
+        self.assertEqual(result["last_compacted_at"], "2026-01-01T00:00:00")
         self.assertEqual(result["approved_tool_call_ids"], ["tool_1"])
         self.assertEqual(result["input_context"], {})
         self.assertEqual(result["plan"], {})
@@ -69,6 +78,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["reflection"], {})
         self.assertIn("long_term_memory", state)
+        self.assertEqual(state["conversation_summary"], "")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from agent_app.tools import candidate_tool_names_for_text, tool_metadata
 
 SelectorAction = Literal["tool", "chat", "auto"]
 LOW_CONFIDENCE_THRESHOLD = 0.7
-NON_TOOL_MODE_KEYWORDS = (
+LOCAL_CONTEXT_KEYWORDS = (
     "知识库",
     "文档",
     "资料库",
@@ -24,6 +24,8 @@ NON_TOOL_MODE_KEYWORDS = (
     "[文件内容]",
     "[图片文件]",
     "[文件解析失败]",
+)
+MEMORY_INSTRUCTION_KEYWORDS = (
     "记住",
     "请记住",
     "以后你要",
@@ -92,11 +94,14 @@ def should_enter_tool_mode(user_text: str) -> bool:
     if not normalized:
         return False
 
+    if any(keyword in normalized for keyword in MEMORY_INSTRUCTION_KEYWORDS):
+        return False
+
     if candidate_tool_names_for_text(normalized):
         return True
 
-    if any(keyword in normalized for keyword in NON_TOOL_MODE_KEYWORDS):
-        return True
+    if any(keyword in normalized for keyword in LOCAL_CONTEXT_KEYWORDS):
+        return False
 
     return any(keyword in normalized for keyword in REALTIME_KEYWORDS) and any(
         keyword in normalized for keyword in EXTERNAL_INFO_KEYWORDS

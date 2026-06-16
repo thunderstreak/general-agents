@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agent_app import cli, session_store
 from agent_app.state import create_initial_state, reset_turn_state
@@ -173,18 +173,106 @@ class CliSessionCommandTest(unittest.TestCase):
 
         self.assertIn("已取消当前输入", buffer.getvalue())
 
+    def test_compact_command_compacts_and_saves_session(self):
+        """`/compact` 压缩当前会话并保存归档。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with _patch_store_dir(tmp_dir):
+                metadata = session_store.create_session(tmp_dir)
+                state = create_initial_state(messages=_turns(6))
+                buffer = io.StringIO()
+                with (
+                    patch("agent_app.context_compaction.invoke_with_fallback", return_value=AIMessage(content="旧对话摘要")),
+                    redirect_stdout(buffer),
+                ):
+                    handled, state, session_id, pending_delete = cli._handle_cli_command("/compact", state, metadata.session_id)
+
+            archive_path = Path(tmp_dir) / metadata.session_id / "messages.archive.jsonl"
+            self.assertTrue(handled)
+            self.assertEqual(session_id, metadata.session_id)
+            self.assertEqual(pending_delete, "")
+            self.assertIn("已压缩上下文", buffer.getvalue())
+            self.assertEqual(state["conversation_summary"], "旧对话摘要")
+            self.assertEqual(len(state["messages"]), 8)
+            self.assertIn("问题 1", archive_path.read_text(encoding="utf-8"))
+
+    def test_compact_command_cancel_does_not_escape_command_handler(self):
+        """`/compact` 取消后仍视为已处理。"""
+        state = create_initial_state(messages=_turns(6))
+
+        with patch("agent_app.cli._run_cancellable", side_effect=cli.TaskCancelled("cancel")):
+            handled, result_state, session_id, pending_delete = cli._handle_cli_command("/compact", state, "session")
+
+        self.assertTrue(handled)
+        self.assertIs(result_state, state)
+        self.assertEqual(session_id, "session")
+        self.assertEqual(pending_delete, "")
+
+    def test_compact_show_command_prints_summary(self):
+        """`/compact show` 显示当前会话摘要。"""
+        state = create_initial_state(conversation_summary="摘要内容")
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            handled, _, _, _ = cli._handle_cli_command("/compact show", state, "session")
+
+        self.assertTrue(handled)
+        self.assertIn("摘要内容", buffer.getvalue())
+
+    def test_auto_compact_if_needed_saves_archive(self):
+        """自动压缩达到阈值的会话。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with _patch_store_dir(tmp_dir):
+                metadata = session_store.create_session(tmp_dir)
+                state = create_initial_state(messages=_turns(6))
+                buffer = io.StringIO()
+                with (
+                    patch("agent_app.cli.CONTEXT_COMPACT_ENABLED", True),
+                    patch("agent_app.cli.CONTEXT_COMPACT_MESSAGE_THRESHOLD", 10),
+                    patch("agent_app.context_compaction.invoke_with_fallback", return_value=AIMessage(content="自动摘要")),
+                    redirect_stdout(buffer),
+                ):
+                    result = cli._auto_compact_if_needed(state, metadata.session_id)
+
+            self.assertEqual(result["conversation_summary"], "自动摘要")
+            self.assertIn("已自动压缩上下文", buffer.getvalue())
+            archive_path = Path(tmp_dir) / metadata.session_id / "messages.archive.jsonl"
+            self.assertIn("问题 1", archive_path.read_text(encoding="utf-8"))
+
+    def test_auto_compact_cancel_returns_original_state(self):
+        """自动压缩取消后保留原 state。"""
+        state = create_initial_state(messages=_turns(6))
+        with (
+            patch("agent_app.cli.CONTEXT_COMPACT_ENABLED", True),
+            patch("agent_app.cli.CONTEXT_COMPACT_MESSAGE_THRESHOLD", 10),
+            patch("agent_app.cli._run_cancellable", side_effect=cli.TaskCancelled("cancel")),
+        ):
+            result = cli._auto_compact_if_needed(state, "session")
+
+        self.assertIs(result, state)
+
 
 def _patch_store_dir(tmp_dir: str):
     """patch CLI 和 store 使用临时目录。"""
     return patch.multiple(
         cli,
         create_session=lambda: session_store.create_session(tmp_dir),
-        save_session_state=lambda session_id, state: session_store.save_session_state(session_id, state, tmp_dir),
+        save_session_state=lambda session_id, state, archived_messages=None: session_store.save_session_state(
+            session_id, state, tmp_dir, archived_messages=archived_messages
+        ),
         list_sessions=lambda: session_store.list_sessions(tmp_dir),
         load_session_state=lambda session_id: session_store.load_session_state(session_id, tmp_dir),
         delete_session=lambda session_id: session_store.delete_session(session_id, tmp_dir),
         session_exists=lambda session_id: session_store.session_exists(session_id, tmp_dir),
     )
+
+
+def _turns(count: int):
+    """构造多轮消息。"""
+    messages = []
+    for index in range(1, count + 1):
+        messages.append(HumanMessage(content=f"问题 {index}"))
+        messages.append(AIMessage(content=f"回答 {index}"))
+    return messages
 
 
 if __name__ == "__main__":

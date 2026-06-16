@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
-from agent_app.nodes.agent import agent_node, invoke_tool_agent, parse_pseudo_tool_calls
+from agent_app.nodes.agent import agent_node, invoke_tool_agent, parse_pseudo_tool_calls, with_context
 from tests.helpers import base_state
 
 
@@ -103,6 +103,25 @@ class AgentNodeTest(unittest.TestCase):
             agent_node(state)
 
         emit_progress.assert_not_called()
+
+    def test_with_context_includes_conversation_summary(self):
+        """有会话摘要时注入摘要上下文。"""
+        messages = [HumanMessage(content="继续")]
+
+        result = with_context(messages, {}, [], "用户之前要求实现上下文压缩。")
+
+        self.assertEqual(result[0].type, "system")
+        self.assertIn("[会话摘要]", result[0].content)
+        self.assertIn("上下文压缩", result[0].content)
+        self.assertEqual(result[-1].content, "继续")
+
+    def test_with_context_omits_empty_conversation_summary(self):
+        """没有会话摘要时不额外注入。"""
+        messages = [HumanMessage(content="你好")]
+
+        result = with_context(messages, {}, [], "")
+
+        self.assertEqual(result, messages)
 
     def test_agent_node_tool_summary_streams_without_converting_pseudo_tool_call(self):
         """工具结果总结可流式输出，但伪工具调用不应再次触发工具。"""

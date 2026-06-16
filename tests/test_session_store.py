@@ -36,6 +36,9 @@ class SessionStoreTest(unittest.TestCase):
                 ],
                 "pending_confirmation": {"tool_name": "web_search"},
                 "long_term_memory": {"items": [{"content": "用户喜欢中文"}], "summary": "摘要"},
+                "conversation_summary": "会话摘要",
+                "compact_count": 1,
+                "last_compacted_at": "2026-01-01T00:00:00",
                 "tool_calls": [{"tool_name": "web_search", "success": True}],
             }
 
@@ -47,6 +50,8 @@ class SessionStoreTest(unittest.TestCase):
             self.assertEqual(loaded["messages"][2].content, "搜索结果")
             self.assertEqual(loaded["pending_confirmation"]["tool_name"], "web_search")
             self.assertEqual(loaded["long_term_memory"]["summary"], "摘要")
+            self.assertEqual(loaded["conversation_summary"], "会话摘要")
+            self.assertEqual(loaded["compact_count"], 1)
 
     def test_messages_jsonl_is_readable(self):
         """messages.jsonl 保存可读角色和内容。"""
@@ -65,6 +70,23 @@ class SessionStoreTest(unittest.TestCase):
             self.assertEqual(payloads[0]["content"], "问题")
             self.assertEqual(payloads[1]["role"], "assistant")
             self.assertEqual(payloads[1]["content"], "回答")
+
+    def test_archived_messages_are_appended(self):
+        """压缩归档消息会追加到 archive 日志。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            metadata = session_store.create_session(tmp_dir)
+            session_store.save_session_state(
+                metadata.session_id,
+                {"messages": [HumanMessage(content="当前")]},
+                tmp_dir,
+                archived_messages=[HumanMessage(content="旧问题"), AIMessage(content="旧回答")],
+            )
+
+            archive_path = Path(tmp_dir) / metadata.session_id / "messages.archive.jsonl"
+            payloads = [json.loads(line) for line in archive_path.read_text(encoding="utf-8").splitlines()]
+
+            self.assertEqual(payloads[0]["content"], "旧问题")
+            self.assertEqual(payloads[1]["content"], "旧回答")
 
     def test_title_updates_from_first_user_message(self):
         """空会话保存后标题更新为第一条用户输入。"""

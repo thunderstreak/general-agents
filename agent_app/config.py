@@ -32,6 +32,11 @@ MAX_FILE_SIZE_MB = float(os.getenv("MAX_FILE_SIZE_MB", "10"))
 MEMORY_FILE_PATH = os.getenv("MEMORY_FILE_PATH", ".agent_memory.json")
 MEMORY_MAX_ITEMS = int(os.getenv("MEMORY_MAX_ITEMS", "50"))
 
+CONTEXT_COMPACT_ENABLED = os.getenv("CONTEXT_COMPACT_ENABLED", "true").lower() in {"1", "true", "yes", "y"}
+CONTEXT_COMPACT_MESSAGE_THRESHOLD = int(os.getenv("CONTEXT_COMPACT_MESSAGE_THRESHOLD", "40"))
+CONTEXT_COMPACT_KEEP_TURNS = int(os.getenv("CONTEXT_COMPACT_KEEP_TURNS", "4"))
+CONTEXT_COMPACT_SUMMARY_MAX_CHARS = int(os.getenv("CONTEXT_COMPACT_SUMMARY_MAX_CHARS", "6000"))
+
 ORCHESTRATOR_MAX_STEPS = int(os.getenv("ORCHESTRATOR_MAX_STEPS", "8"))
 
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() in {"1", "true", "yes", "y"}

@@ -25,6 +25,9 @@ class AgentState(TypedDict):
     retrieval_results: Annotated[list, operator.add]
     user_profile: dict
     long_term_memory: dict
+    conversation_summary: str
+    compact_count: int
+    last_compacted_at: str
     step_count: int
     max_steps: int
     last_error: dict
@@ -52,6 +55,9 @@ def create_initial_state(**overrides: Any) -> dict[str, Any]:
         "retrieval_results": [],
         "user_profile": {},
         "long_term_memory": memory_to_state(memory),
+        "conversation_summary": "",
+        "compact_count": 0,
+        "last_compacted_at": "",
         "step_count": 0,
         "max_steps": ORCHESTRATOR_MAX_STEPS,
         "last_error": {},

@@ -80,6 +80,17 @@ class PerceptionNodeTest(unittest.TestCase):
         self.assertIn("url", context["intent_signals"])
         self.assertEqual(context["candidate_tool_names"], ["fetch_url"])
 
+    def test_perception_node_memory_instruction_has_no_tool_signal(self):
+        """记忆类设计约束不标记外部工具信号。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="请记住本次设计里不要引入数据库，先用内存存储")]
+
+        result = perception_node(state)
+
+        context = result["input_context"]
+        self.assertNotIn("tool", context["intent_signals"])
+        self.assertEqual(context["candidate_tool_names"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

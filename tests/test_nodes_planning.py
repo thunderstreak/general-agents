@@ -32,6 +32,17 @@ class PlanningNodeTest(unittest.TestCase):
         self.assertEqual(result["plan"]["mode"], "chat")
         self.assertEqual(result["plan"]["plan_steps"][0]["action"], "chat")
 
+    def test_planning_node_memory_instruction_uses_chat_plan(self):
+        """记忆类设计约束不进入外部工具模式。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="请记住本次设计里不要引入数据库，先用内存存储")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "chat")
+        self.assertEqual(result["plan"]["plan_steps"][0]["action"], "chat")
+        self.assertEqual(result["plan"]["candidate_tool_names"], [])
+
     def test_planning_node_uses_quick_chat_without_select_tool(self):
         """明显普通对话跳过工具选择模型。"""
         state = base_state()

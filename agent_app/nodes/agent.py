@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, SystemMessage, ToolCall, ToolMessage
 
 from agent_app.cli_cancel import raise_if_cancelled
+from agent_app.context_compaction import build_summary_context
 from agent_app.llm import get_chat_model, invoke_with_fallback
 from agent_app.memory import with_memory_context
 from agent_app.nodes.common import emit_progress, merge_attempted_tools, next_step_state, node_run
@@ -37,7 +38,7 @@ def agent_node(state: AgentState):
             return {**step_update, "node_runs": [node_run("agent", start_time)]}
 
         memory_state = state.get("long_term_memory", {})
-        model_messages = with_context(messages, memory_state, state.get("retrieval_results", []))
+        model_messages = with_context(messages, memory_state, state.get("retrieval_results", []), state.get("conversation_summary", ""))
 
         is_tool_summary = isinstance(messages[-1], ToolMessage)
         if is_tool_summary:
@@ -231,9 +232,12 @@ def get_llm_with_tools():
     return _llm_with_tools
 
 
-def with_context(messages: list, memory_state: dict, retrieval_results: list):
+def with_context(messages: list, memory_state: dict, retrieval_results: list, conversation_summary: str = ""):
     """给模型消息注入 memory 和 RAG 上下文。"""
     model_messages = with_memory_context(messages, memory_state)
+    summary_message = build_summary_context(conversation_summary)
+    if summary_message is not None:
+        model_messages = [summary_message, *model_messages]
     if not retrieval_results:
         return model_messages
 
