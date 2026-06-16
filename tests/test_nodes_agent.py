@@ -85,6 +85,47 @@ class AgentNodeTest(unittest.TestCase):
         invoke.assert_called_once()
         self.assertEqual(result["messages"][0].content, "你好")
 
+    def test_agent_node_chat_plan_retries_empty_response(self):
+        """chat plan 空回答时重试一次，避免最终输出空白。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="如何安装安全审计协议")]
+        state["plan"] = {
+            "intent": "chat",
+            "mode": "chat",
+            "plan_steps": [{"step_id": "step_1", "action": "chat", "tool_name": "", "args": {}, "reason": "普通对话"}],
+            "current_step": 0,
+            "decision_reason": "普通对话",
+            "status": "ready",
+        }
+
+        with patch(
+            "agent_app.nodes.agent.invoke_with_fallback",
+            side_effect=[AIMessage(content=""), AIMessage(content="请先确认安全审计协议的具体产品或标准。")],
+        ) as invoke:
+            result = agent_node(state)
+
+        self.assertEqual(invoke.call_count, 2)
+        self.assertIn("请先确认", result["messages"][0].content)
+
+    def test_agent_node_empty_response_uses_generic_fallback(self):
+        """模型连续空回答时输出通用兜底。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="如何安装安全审计协议")]
+        state["plan"] = {
+            "intent": "chat",
+            "mode": "chat",
+            "plan_steps": [{"step_id": "step_1", "action": "chat", "tool_name": "", "args": {}, "reason": "planner 错判普通回答"}],
+            "current_step": 0,
+            "decision_reason": "planner 错判普通回答",
+            "status": "ready",
+        }
+
+        with patch("agent_app.nodes.agent.invoke_with_fallback", side_effect=[AIMessage(content=""), AIMessage(content="")]):
+            result = agent_node(state)
+
+        self.assertIn("我这次没有生成有效回答", result["messages"][0].content)
+        self.assertIn("如何安装安全审计协议", result["messages"][0].content)
+
     def test_agent_node_chat_plan_does_not_emit_thinking_progress(self):
         """普通 chat plan 不输出思考进度。"""
         state = base_state()
@@ -140,6 +181,34 @@ class AgentNodeTest(unittest.TestCase):
         self.assertIn("哪段内容", result["messages"][0].content)
         self.assertEqual(result["clarification"]["missing_info"], "处理对象")
         self.assertEqual(result["clarification"]["reason"], "操作类请求缺少明确处理对象。")
+
+    def test_agent_node_rag_list_plan_returns_documents_without_llm(self):
+        """rag_list plan 直接输出知识库文档列表。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="知识库有哪些")]
+        state["plan"] = {
+            "intent": "rag_list",
+            "mode": "rag_list",
+            "plan_steps": [{"step_id": "step_1", "action": "rag_list", "tool_name": "", "args": {}, "reason": "列出知识库文档"}],
+            "current_step": 0,
+            "decision_reason": "列出知识库文档",
+            "status": "ready",
+        }
+
+        with (
+            patch(
+                "agent_app.nodes.agent.list_documents",
+                return_value=[{"document_id": "doc1", "title": "demo.md", "chunk_count": 2, "path": "/tmp/demo.md"}],
+            ),
+            patch("agent_app.nodes.agent.invoke_with_fallback") as invoke,
+            patch("agent_app.nodes.agent.get_llm_with_tools") as get_tools_model,
+        ):
+            result = agent_node(state)
+
+        invoke.assert_not_called()
+        get_tools_model.assert_not_called()
+        self.assertIn("知识库当前共有 1 个文档", result["messages"][0].content)
+        self.assertIn("doc1 | demo.md | 2 个片段", result["messages"][0].content)
 
     def test_with_context_includes_conversation_summary(self):
         """有会话摘要时注入摘要上下文。"""
@@ -205,11 +274,13 @@ class AgentNodeTest(unittest.TestCase):
         }
         fake_model = FakeToolModel()
 
-        with patch("agent_app.nodes.agent.get_llm_with_tools", return_value=fake_model):
+        with patch("agent_app.nodes.agent.get_llm_with_tools", return_value=fake_model), patch(
+            "agent_app.nodes.agent.invoke_with_fallback", return_value=AIMessage(content="")
+        ):
             result = agent_node(state)
 
         self.assertTrue(fake_model.called)
-        self.assertEqual(result["messages"][0].content, "")
+        self.assertIn("没能生成有效", result["messages"][0].content)
 
     def test_agent_node_converts_pseudo_tool_call_to_real_tool_call(self):
         """模型误吐的伪工具调用会转换为真实 tool_calls。"""

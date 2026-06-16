@@ -79,6 +79,18 @@ class PerceptionNodeTest(unittest.TestCase):
         self.assertIn("url", context["intent_signals"])
         self.assertEqual(context["candidate_tool_names"], ["fetch_url"])
 
+    def test_perception_node_treats_rag_list_as_rag_hint_only(self):
+        """知识库清单问题只保留 RAG hint，不做语义分类。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="知识库有哪些")]
+
+        result = perception_node(state)
+
+        context = result["input_context"]
+        self.assertNotIn("rag_list_request", context)
+        self.assertTrue(context["should_retrieve"])
+        self.assertIn("rag", context["intent_signals"])
+
     def test_perception_node_memory_instruction_has_no_tool_signal(self):
         """记忆类设计约束不标记外部工具信号。"""
         state = base_state()

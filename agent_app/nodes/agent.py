@@ -13,6 +13,7 @@ from agent_app.memory import with_memory_context
 from agent_app.nodes.common import emit_progress, merge_attempted_tools, next_step_state, node_run
 from agent_app.nodes.planning import current_plan_step
 from agent_app.orchestrator import error_state
+from agent_app.rag import KnowledgeBaseError, list_documents
 from agent_app.state import AgentState
 from agent_app.tools import tools, tools_by_name
 from agent_app.utils.messages import message_text
@@ -68,6 +69,8 @@ def agent_node(state: AgentState):
                 response = fallback_tool_agent_response(response, state)
             elif action == "clarification":
                 response = clarification_to_message(state.get("plan") or {})
+            elif action == "rag_list":
+                response = rag_list_to_message()
             elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
@@ -75,6 +78,7 @@ def agent_node(state: AgentState):
 
         if not is_tool_summary:
             response = normalize_pseudo_tool_call_response(response)
+        response = ensure_visible_response(response, state, action, is_tool_summary)
         state_update = {**step_update, "messages": [response], "node_runs": [node_run("agent", start_time)]}
         if getattr(response, "tool_calls", None):
             state_update["last_tool_request"] = {"tool_calls": response.tool_calls}
@@ -89,6 +93,58 @@ def agent_node(state: AgentState):
             "last_error": error_state(message, "agent_error", "agent"),
             "node_runs": [node_run("agent", start_time, success=False, error=message)],
         }
+
+
+def ensure_visible_response(response, state: AgentState, action: str = "", is_tool_summary: bool = False):
+    """确保非工具调用响应有可展示内容。"""
+    if getattr(response, "tool_calls", None):
+        return response
+    content = str(getattr(response, "content", "") or "").strip()
+    if content:
+        return response
+
+    retry_response = retry_empty_response(state, action, is_tool_summary)
+    retry_response = normalize_pseudo_tool_call_response(retry_response)
+    if getattr(retry_response, "tool_calls", None):
+        return retry_response
+    retry_content = str(getattr(retry_response, "content", "") or "").strip()
+    if retry_content:
+        return retry_response
+
+    return AIMessage(content=empty_response_fallback_text(state, action, is_tool_summary))
+
+
+def retry_empty_response(state: AgentState, action: str, is_tool_summary: bool):
+    """模型空回答时用明确指令重试一次。"""
+    user_text = _latest_user_text(state)
+    if is_tool_summary:
+        prompt = "上一次根据工具结果生成回答时返回了空内容。请用中文总结工具结果；若结果不足，请说明缺少什么。"
+    elif action == "tool_agent":
+        prompt = "上一次工具模式没有生成工具调用，也没有生成可展示回答。请直接用中文回答，或说明需要补充哪些信息。"
+    else:
+        prompt = "上一次回答为空。请直接用中文回答用户问题；如果问题不明确，请提出一个具体澄清问题。"
+
+    try:
+        return invoke_with_fallback(
+            [
+                SystemMessage(content=prompt),
+                *with_context(state["messages"], state.get("long_term_memory", {}), state.get("retrieval_results", []), state.get("conversation_summary", "")),
+            ]
+        )
+    except Exception:
+        return AIMessage(content="")
+
+
+def empty_response_fallback_text(state: AgentState, action: str, is_tool_summary: bool) -> str:
+    """生成模型连续空回答时的兜底文本。"""
+    user_text = _latest_user_text(state)
+    if is_tool_summary:
+        return "工具已经返回结果，但模型没有生成总结。请打开 debug 查看工具结果，或换个更具体的问题再试。"
+    if action == "tool_agent":
+        return "我没能生成有效的工具调用或回答。请补充更具体的目标、对象或上下文后再试。"
+    if user_text:
+        return f"我这次没有生成有效回答。请把“{user_text}”再具体一点，比如补充目标环境、版本或你希望我给出的步骤。"
+    return "我这次没有生成有效回答。请换个更具体的说法再试。"
 
 
 def tool_selection_to_message(tool_name: str, tool_args: dict):
@@ -113,6 +169,25 @@ def clarification_state(plan: dict, question: str) -> dict:
         "missing_info": plan.get("missing_info", ""),
         "reason": plan.get("clarification_reason", ""),
     }
+
+
+def rag_list_to_message() -> AIMessage:
+    """把知识库文档列表转换为回答消息。"""
+    try:
+        documents = list_documents()
+    except KnowledgeBaseError as exc:
+        return AIMessage(content=f"读取知识库失败：{exc}")
+    if not documents:
+        return AIMessage(content="知识库暂无文档。")
+
+    lines = [f"知识库当前共有 {len(documents)} 个文档："]
+    for item in documents:
+        document_id = item.get("document_id", "未知 ID")
+        title = item.get("title") or item.get("source") or document_id
+        chunk_count = item.get("chunk_count", 0)
+        path = item.get("path") or item.get("source") or ""
+        lines.append(f"- {document_id} | {title} | {chunk_count} 个片段 | {path}")
+    return AIMessage(content="\n".join(lines))
 
 
 def invoke_tool_agent(model_messages: list, plan: dict, tags: list[str] | None = None):

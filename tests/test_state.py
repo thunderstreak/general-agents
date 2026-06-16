@@ -22,6 +22,11 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["input_context"], {})
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["clarification"], {})
+        self.assertEqual(state["collaboration_plan"], {})
+        self.assertEqual(state["subagent_tasks"], [])
+        self.assertEqual(state["active_subagent_task"], {})
+        self.assertEqual(state["subagent_results"], [])
+        self.assertEqual(state["collaboration_summary"], {})
         self.assertEqual(state["reflection"], {})
         self.assertEqual(state["last_tool_request"], {})
         self.assertEqual(state["attempted_tools"], [])
@@ -42,6 +47,11 @@ class AgentStateTest(unittest.TestCase):
             last_compacted_at="2026-01-01T00:00:00",
             plan={"mode": "tool"},
             clarification={"question": "旧问题"},
+            collaboration_plan={"mode": "collaboration"},
+            subagent_tasks=[{"role": "researcher"}],
+            active_subagent_task={"role": "executor"},
+            subagent_results=[{"role": "researcher"}],
+            collaboration_summary={"draft": "old"},
             reflection={"status": "passed"},
             last_tool_request={"tool_calls": [{"name": "get_weather"}]},
             attempted_tools=["fetch_url"],
@@ -63,6 +73,11 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(result["input_context"], {})
         self.assertEqual(result["plan"], {})
         self.assertEqual(result["clarification"], {})
+        self.assertEqual(result["collaboration_plan"], {})
+        self.assertEqual(result["subagent_tasks"], [])
+        self.assertEqual(result["active_subagent_task"], {})
+        self.assertEqual(result["subagent_results"], [])
+        self.assertEqual(result["collaboration_summary"], {})
         self.assertEqual(result["reflection"], {})
         self.assertEqual(result["last_tool_request"], {})
         self.assertEqual(result["attempted_tools"], [])
@@ -80,6 +95,8 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["input_context"], {})
         self.assertEqual(state["plan"], {})
         self.assertEqual(state["clarification"], {})
+        self.assertEqual(state["collaboration_plan"], {})
+        self.assertEqual(state["subagent_results"], [])
         self.assertEqual(state["reflection"], {})
         self.assertIn("long_term_memory", state)
         self.assertEqual(state["conversation_summary"], "")

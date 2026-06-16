@@ -72,6 +72,18 @@ class RetrievalNodeTest(unittest.TestCase):
 
         self.assertEqual(result["retrieval_results"][0]["source"], "doc.md")
 
+    def test_retrieval_runs_when_called_with_rag_hint(self):
+        """retrieval 节点被调用且有 RAG hint 时执行检索。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="知识库有哪些")]
+        state["input_context"] = {"normalized_text": "知识库有哪些", "should_retrieve": True}
+
+        with patch("agent_app.nodes.retrieval.search_knowledge", return_value=[]) as search_knowledge:
+            result = retrieval_node(state)
+
+        search_knowledge.assert_called_once()
+        self.assertEqual(result["retrieval_results"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ from agent_app.prompt_loader import load_prompt
 from agent_app.tools import tool_metadata
 
 
-SelectorAction = Literal["tool", "tool_agent", "chat", "clarification", "auto"]
+SelectorAction = Literal["tool", "tool_agent", "chat", "clarification", "collaboration", "rag_list", "auto"]
 LOW_CONFIDENCE_THRESHOLD = 0.7
 LOCAL_CONTEXT_KEYWORDS = (
     "知识库",
@@ -49,7 +49,7 @@ QUICK_CHAT_EXACT_MATCHES = {
     "你是谁",
     "你能做什么",
 }
-PLANNER_MODES = {"tool", "tool_agent", "chat", "clarification"}
+PLANNER_MODES = {"tool", "tool_agent", "chat", "clarification", "collaboration", "rag_list"}
 
 
 @dataclass
@@ -141,7 +141,7 @@ def parse_planner_payload(payload: dict[str, Any]) -> ToolSelection:
 
     confidence = _parse_confidence(payload.get("confidence", 0.0))
     reason = str(payload.get("reason") or "").strip()
-    if confidence < LOW_CONFIDENCE_THRESHOLD and action not in {"chat", "clarification"}:
+    if confidence < LOW_CONFIDENCE_THRESHOLD and action not in {"chat", "clarification", "collaboration", "rag_list"}:
         return ToolSelection(action="chat", confidence=confidence, reason=f"低置信度回退：{reason}")
 
     available_tool_names = {metadata.name for metadata in tool_metadata}

@@ -18,6 +18,11 @@ class AgentState(TypedDict):
     tool_selection: dict
     plan: dict
     clarification: dict
+    collaboration_plan: dict
+    subagent_tasks: list
+    active_subagent_task: dict
+    subagent_results: Annotated[list, operator.add]
+    collaboration_summary: dict
     reflection: dict
     last_tool_request: dict
     attempted_tools: list
@@ -49,6 +54,11 @@ def create_initial_state(**overrides: Any) -> dict[str, Any]:
         "tool_selection": {},
         "plan": {},
         "clarification": {},
+        "collaboration_plan": {},
+        "subagent_tasks": [],
+        "active_subagent_task": {},
+        "subagent_results": [],
+        "collaboration_summary": {},
         "reflection": {},
         "last_tool_request": {},
         "attempted_tools": [],
@@ -82,6 +92,11 @@ def reset_turn_state(state: dict[str, Any]) -> dict[str, Any]:
     state["input_context"] = {}
     state["plan"] = {}
     state["clarification"] = {}
+    state["collaboration_plan"] = {}
+    state["subagent_tasks"] = []
+    state["active_subagent_task"] = {}
+    state["subagent_results"] = []
+    state["collaboration_summary"] = {}
     state["reflection"] = {}
     state["last_tool_request"] = {}
     state["attempted_tools"] = []
