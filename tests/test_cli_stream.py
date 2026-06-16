@@ -314,6 +314,28 @@ class CliStreamTest(unittest.TestCase):
         self.assertIn("Agent: 需要确认", buffer.getvalue())
         self.assertEqual(buffer.getvalue().count("Agent:"), 1)
 
+    def test_stream_response_falls_back_when_only_blank_tokens(self):
+        """只有空白 token 时使用最终响应兜底。"""
+        final_state = {
+            "messages": [],
+            "final_response": {"content": "最终回答", "retrieval_sources": [], "tool_calls": [], "tool_summary": [], "errors": []},
+        }
+        chunks = [
+            {"type": "messages", "data": (AIMessageChunk(content="\n"), {"tags": []})},
+            {"type": "messages", "data": (AIMessageChunk(content="   "), {"tags": []})},
+            {"type": "values", "data": final_state},
+        ]
+
+        with patch.object(cli, "get_app", return_value=FakeStreamApp(chunks)):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                result = cli._stream_response({"messages": []})
+
+        self.assertEqual(result, final_state)
+        output = buffer.getvalue()
+        self.assertIn("Agent: 最终回答", output)
+        self.assertEqual(output.count("Agent:"), 1)
+
     def test_stream_response_prints_initial_status_before_first_chunk(self):
         """进入 stream 前立即输出临时状态而非 Agent 前缀。"""
         fake_app = FakeStreamApp([])

@@ -36,6 +36,13 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(response["type"], "message")
         self.assertEqual(response["content"], "完成")
 
+    def test_empty_success_response_has_visible_fallback(self):
+        """成功但内容为空时给出可见兜底回答。"""
+        response = build_response(_state(""))
+
+        self.assertEqual(response["status"], "success")
+        self.assertIn("没有生成可展示的回答", response["content"])
+
     def test_error_response(self):
         """错误响应。"""
         state = _state("执行失败")

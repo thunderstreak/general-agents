@@ -17,6 +17,7 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
     """流式执行 LangGraph 并渲染 CLI 输出。"""
     latest_state = state
     printed_token = False
+    printed_visible_content = False
     printed_agent_prefix = False
     status_visible = print_initial_status()
     printed_progress: set[str] = set()
@@ -52,12 +53,17 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
                     printed_agent_prefix = print_progress(tool_call_preview, printed_agent_prefix, printed_progress)
                 if not token:
                     continue
+                if not token.strip():
+                    printed_token = True
+                    continue
                 status_visible = clear_initial_status(status_visible)
                 if not printed_agent_prefix:
                     print("Agent: ", end="", flush=True)
                     printed_agent_prefix = True
                 print(token, end="", flush=True)
                 printed_token = True
+                if token.strip():
+                    printed_visible_content = True
     except KeyboardInterrupt:
         clear_initial_status(status_visible)
         raise
@@ -73,12 +79,17 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
             printed_agent_prefix = True
         print(token, end="", flush=True)
         printed_token = True
+        if token.strip():
+            printed_visible_content = True
 
-    if printed_token:
+    if printed_visible_content:
         print()
         print_debug_tail(latest_state)
         print()
         return latest_state
+
+    if printed_token:
+        print("\r\033[2K", end="", flush=True)
 
     clear_initial_status(status_visible)
     print_response(latest_state)

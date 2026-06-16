@@ -1,11 +1,12 @@
 """Planning 节点与 plan 辅助函数。"""
 
+import re
 import time
 from urllib.parse import urlparse
 
 from agent_app.nodes.common import latest_human_message, node_run
 from agent_app.state import AgentState
-from agent_app.tool_selector import ToolSelection, should_enter_tool_mode
+from agent_app.tool_selector import ToolSelection, select_plan
 from agent_app.tools import candidate_tool_names_for_text
 from agent_app.utils.messages import message_text
 
@@ -44,32 +45,34 @@ def planning_node(state: AgentState):
 
 
 def planning_selection(user_text: str, has_user_message: bool, input_context: dict | None = None) -> ToolSelection:
-    """根据本地 gate 生成规划选择。"""
+    """根据 hard guard 和结构化 planner 生成规划选择。"""
     if not has_user_message:
         return ToolSelection(action="auto", reason="没有找到用户消息")
-    if (input_context or {}).get("should_retrieve"):
+    input_context = input_context or {}
+    candidate_tool_names = input_context.get("candidate_tool_names")
+    if (input_context or {}).get("should_retrieve") and not _asks_external_info(user_text):
         return ToolSelection(action="chat", confidence=1.0, reason="本地判断：使用知识库检索上下文回答")
-    candidate_tool_names = (input_context or {}).get("candidate_tool_names")
-    clarification = clarification_decision(user_text, input_context or {}, candidate_tool_names or [])
+    hard_guard_selection = deterministic_selection(user_text, input_context, candidate_tool_names or [])
+    if hard_guard_selection:
+        return hard_guard_selection
+    clarification = clarification_decision(user_text, input_context, candidate_tool_names or [])
     if clarification:
-        return ToolSelection(action="auto", args=clarification, confidence=1.0, reason="本地判断：需要澄清")
-    if should_enter_tool_mode(user_text) or candidate_tool_names:
-        return tool_agent_selection(user_text, candidate_tool_names)
-    return ToolSelection(action="chat", confidence=1.0, reason="本地判断：普通对话")
+        return ToolSelection(action="clarification", args=clarification, confidence=1.0, reason="本地判断：需要澄清")
+    planner_selection = select_plan(user_text, input_context)
+    if planner_selection.action == "auto":
+        return ToolSelection(action="chat", confidence=planner_selection.confidence, reason=planner_selection.reason or "规划失败，回退普通对话")
+    return planner_selection
 
 
 def selection_to_plan(selection: ToolSelection) -> dict:
     """把工具选择结果转换为统一 plan 结构。"""
-    action = selection.action if selection.action in {"tool", "chat", "auto"} else "auto"
-    if action == "auto" and selection.reason == "本地判断：进入工具 agent 模式":
-        action = "tool_agent"
-    if action == "auto" and selection.reason == "本地判断：需要澄清":
-        action = "clarification"
+    action = selection.action if selection.action in {"tool", "tool_agent", "chat", "clarification", "auto"} else "auto"
+    tool_args = _tool_args(selection.args) if action == "tool" else {}
     step = {
         "step_id": "step_1",
         "action": action,
         "tool_name": selection.tool_name if action == "tool" else "",
-        "args": selection.args if action == "tool" else {},
+        "args": tool_args,
         "reason": selection.reason,
     }
     candidate_tool_names = selection.args.get("_candidate_tool_names", []) if isinstance(selection.args, dict) else []
@@ -97,13 +100,35 @@ def plan_intent(selection: ToolSelection) -> str:
     """根据选择器结果生成轻量意图标签。"""
     if selection.action == "tool" and selection.tool_name:
         return f"use_tool:{selection.tool_name}"
-    if selection.action == "auto" and selection.reason == "本地判断：进入工具 agent 模式":
+    if selection.action == "tool_agent":
         return "tool_agent"
-    if selection.action == "auto" and selection.reason == "本地判断：需要澄清":
+    if selection.action == "clarification":
         return "clarification"
     if selection.action == "chat":
         return "chat"
     return "auto"
+
+
+def deterministic_selection(user_text: str, input_context: dict, candidate_tool_names: list[str]) -> ToolSelection | None:
+    """处理不需要 LLM 判断的确定性规划场景。"""
+    normalized = " ".join(str(user_text or "").split()).strip()
+    if not normalized:
+        return None
+    if _is_memory_instruction(normalized):
+        return ToolSelection(action="chat", confidence=1.0, reason="本地判断：记忆指令")
+    if _has_file_or_image_context(input_context) and not _asks_external_info(normalized):
+        return ToolSelection(action="chat", confidence=1.0, reason="本地判断：使用已提供文件上下文回答")
+    if "fetch_url" in candidate_tool_names or _first_url(normalized):
+        return tool_agent_selection(normalized, ["fetch_url"])
+    if "get_weather_forecast" in candidate_tool_names:
+        return tool_agent_selection(normalized, ["get_weather_forecast"])
+    if "get_weather" in candidate_tool_names:
+        return tool_agent_selection(normalized, ["get_weather"])
+    if "get_location" in candidate_tool_names:
+        return tool_agent_selection(normalized, ["get_location"])
+    if _is_event_summary_request(normalized):
+        return tool_agent_selection(normalized, ["web_search"])
+    return None
 
 
 def clarification_decision(user_text: str, input_context: dict, candidate_tool_names: list[str]) -> dict:
@@ -130,7 +155,7 @@ def clarification_decision(user_text: str, input_context: dict, candidate_tool_n
 
 def _has_context_target(text: str, input_context: dict) -> bool:
     """判断输入是否已经包含可处理对象。"""
-    if input_context.get("attachments") or input_context.get("file_errors") or input_context.get("should_retrieve"):
+    if _has_file_or_image_context(input_context) or input_context.get("file_errors") or input_context.get("should_retrieve"):
         return True
     if "http://" in text or "https://" in text or "[文件:" in text or "[文件内容]" in text:
         return True
@@ -189,7 +214,7 @@ def tool_agent_selection(user_text: str, candidate_tool_names: list[str] | None 
     """生成 tool-agent 选择结果，并记录本轮候选工具。"""
     candidate_tool_names = candidate_tool_names if candidate_tool_names is not None else candidate_tool_names_for_text(user_text)
     return ToolSelection(
-        action="auto",
+        action="tool_agent",
         args={"_candidate_tool_names": candidate_tool_names},
         confidence=1.0,
         reason="本地判断：进入工具 agent 模式",
@@ -211,6 +236,41 @@ def _fallback_query(reflection: dict) -> str:
     if reason:
         return reason[:200]
     return "用户请求相关信息"
+
+
+def _tool_args(args: dict) -> dict:
+    """移除 plan 内部参数，保留真实工具参数。"""
+    if not isinstance(args, dict):
+        return {}
+    return {key: value for key, value in args.items() if key != "_candidate_tool_names"}
+
+
+def _has_file_or_image_context(input_context: dict) -> bool:
+    """判断是否存在用户已提供的文件或图片上下文。"""
+    return bool(input_context.get("attachments") or input_context.get("has_image"))
+
+
+def _asks_external_info(text: str) -> bool:
+    """判断用户是否明确要求外部信息。"""
+    normalized = str(text or "").lower()
+    return any(keyword in normalized for keyword in ("联网", "搜索", "查一下", "查询", "最新", "实时", "新闻", "网页", "web", "search"))
+
+
+def _is_event_summary_request(text: str) -> bool:
+    """判断是否为需要外部资料的事件总结请求。"""
+    normalized = str(text or "").lower()
+    time_keywords = ("去年", "今年", "最近一年", "过去一年", "上半年", "下半年", "last year", "this year", "recent")
+    event_keywords = ("世界大事件", "大事件", "重大事件", "新闻事件", "年度事件", "events")
+    action_keywords = ("总结", "梳理", "回顾", "盘点", "summary", "recap")
+    return any(keyword in normalized for keyword in time_keywords) and any(
+        keyword in normalized for keyword in event_keywords
+    ) and any(keyword in normalized for keyword in action_keywords)
+
+
+def _first_url(text: str) -> str:
+    """提取文本中的第一个 URL。"""
+    match = re.search(r"https?://[^\s，。)）]+", text)
+    return match.group(0) if match else ""
 
 
 def current_plan_step(plan: dict) -> dict:

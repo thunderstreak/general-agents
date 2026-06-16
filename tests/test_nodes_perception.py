@@ -66,8 +66,8 @@ class PerceptionNodeTest(unittest.TestCase):
         self.assertTrue(context["requires_vision"])
         self.assertEqual(context["attachments"][0]["kind"], "image")
 
-    def test_perception_node_records_tool_and_rag_signals(self):
-        """工具和 RAG 信号会进入 input_context。"""
+    def test_perception_node_records_url_and_rag_signals(self):
+        """URL 和 RAG 信号会进入 input_context。"""
         state = base_state()
         state["messages"] = [HumanMessage(content="根据知识库回答 LangGraph，并总结 https://example.com")]
 
@@ -76,7 +76,6 @@ class PerceptionNodeTest(unittest.TestCase):
         context = result["input_context"]
         self.assertTrue(context["should_retrieve"])
         self.assertIn("rag", context["intent_signals"])
-        self.assertIn("tool", context["intent_signals"])
         self.assertIn("url", context["intent_signals"])
         self.assertEqual(context["candidate_tool_names"], ["fetch_url"])
 

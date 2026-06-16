@@ -8,7 +8,6 @@ from langchain_core.messages import HumanMessage
 from agent_app.nodes.common import latest_human_message, node_run
 from agent_app.orchestrator import should_retrieve
 from agent_app.state import AgentState
-from agent_app.tool_selector import should_enter_tool_mode
 from agent_app.tools import candidate_tool_names_for_text
 from agent_app.utils.messages import message_text
 
@@ -103,8 +102,6 @@ def _intent_signals(text: str, candidate_tool_names: list[str]) -> list[str]:
     signals = []
     if should_retrieve(text):
         signals.append("rag")
-    if should_enter_tool_mode(text):
-        signals.append("tool")
     if "fetch_url" in candidate_tool_names:
         signals.append("url")
     if "get_weather" in candidate_tool_names or "get_weather_forecast" in candidate_tool_names:

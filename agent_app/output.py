@@ -18,6 +18,8 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
     content = sanitize_model_content(content)
     errors = _collect_errors(state)
     pending_confirmation = state.get("pending_confirmation") or {}
+    if not str(content or "").strip() and not errors and not pending_confirmation:
+        content = "这次没有生成可展示的回答。请再试一次，或换个更具体的说法。"
 
     status, response_type = _response_kind(errors, pending_confirmation)
     return {
