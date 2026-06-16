@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolCall, ToolMessage
 
-from agent_app.cli.cancel import raise_if_cancelled
+from agent_app.cancel import raise_if_cancelled
 from agent_app.context_compaction import build_summary_context
 from agent_app.llm import get_chat_model, invoke_with_fallback
 from agent_app.memory import with_memory_context
@@ -38,6 +38,7 @@ def agent_node(state: AgentState):
         memory_state = state.get("long_term_memory", {})
         model_messages = with_context(messages, memory_state, state.get("retrieval_results", []), state.get("conversation_summary", ""))
 
+        action = ""
         is_tool_summary = isinstance(messages[-1], ToolMessage)
         if is_tool_summary:
             emit_progress("正在整理工具结果...", event="summary_started", node="agent")
@@ -65,6 +66,8 @@ def agent_node(state: AgentState):
                 emit_progress("需要外部信息，准备调用工具...", node="agent")
                 response = invoke_tool_agent(model_messages, state.get("plan") or {}, tags=["nostream"])
                 response = fallback_tool_agent_response(response, state)
+            elif action == "clarification":
+                response = clarification_to_message(state.get("plan") or {})
             elif action == "chat":
                 response = invoke_with_fallback(model_messages)
             else:
@@ -76,6 +79,8 @@ def agent_node(state: AgentState):
         if getattr(response, "tool_calls", None):
             state_update["last_tool_request"] = {"tool_calls": response.tool_calls}
             state_update["attempted_tools"] = merge_attempted_tools(state, [tool_call["name"] for tool_call in response.tool_calls])
+        if action == "clarification":
+            state_update["clarification"] = clarification_state(state.get("plan") or {}, response.content)
         return state_update
     except Exception as exc:
         message = f"Agent 节点执行失败：{exc}"
@@ -91,6 +96,23 @@ def tool_selection_to_message(tool_name: str, tool_args: dict):
     tool_call_id = f"selected_{tool_name}"
     tool_call = ToolCall(name=tool_name, args=tool_args, id=tool_call_id)
     return AIMessage(content="", tool_calls=[tool_call])
+
+
+def clarification_to_message(plan: dict) -> AIMessage:
+    """把 clarification plan 转换为追问消息。"""
+    question = str(plan.get("clarification_question") or "").strip()
+    if not question:
+        question = "我还需要你补充更多信息后才能继续。"
+    return AIMessage(content=question)
+
+
+def clarification_state(plan: dict, question: str) -> dict:
+    """构造 clarification state。"""
+    return {
+        "question": question,
+        "missing_info": plan.get("missing_info", ""),
+        "reason": plan.get("clarification_reason", ""),
+    }
 
 
 def invoke_tool_agent(model_messages: list, plan: dict, tags: list[str] | None = None):

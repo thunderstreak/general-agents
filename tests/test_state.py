@@ -21,6 +21,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["messages"], [])
         self.assertEqual(state["input_context"], {})
         self.assertEqual(state["plan"], {})
+        self.assertEqual(state["clarification"], {})
         self.assertEqual(state["reflection"], {})
         self.assertEqual(state["last_tool_request"], {})
         self.assertEqual(state["attempted_tools"], [])
@@ -40,6 +41,7 @@ class AgentStateTest(unittest.TestCase):
             compact_count=2,
             last_compacted_at="2026-01-01T00:00:00",
             plan={"mode": "tool"},
+            clarification={"question": "旧问题"},
             reflection={"status": "passed"},
             last_tool_request={"tool_calls": [{"name": "get_weather"}]},
             attempted_tools=["fetch_url"],
@@ -60,6 +62,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(result["approved_tool_call_ids"], ["tool_1"])
         self.assertEqual(result["input_context"], {})
         self.assertEqual(result["plan"], {})
+        self.assertEqual(result["clarification"], {})
         self.assertEqual(result["reflection"], {})
         self.assertEqual(result["last_tool_request"], {})
         self.assertEqual(result["attempted_tools"], [])
@@ -76,6 +79,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["messages"][0].content, "旧会话")
         self.assertEqual(state["input_context"], {})
         self.assertEqual(state["plan"], {})
+        self.assertEqual(state["clarification"], {})
         self.assertEqual(state["reflection"], {})
         self.assertIn("long_term_memory", state)
         self.assertEqual(state["conversation_summary"], "")

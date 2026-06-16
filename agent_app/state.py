@@ -17,6 +17,7 @@ class AgentState(TypedDict):
     input_context: dict
     tool_selection: dict
     plan: dict
+    clarification: dict
     reflection: dict
     last_tool_request: dict
     attempted_tools: list
@@ -47,6 +48,7 @@ def create_initial_state(**overrides: Any) -> dict[str, Any]:
         "input_context": {},
         "tool_selection": {},
         "plan": {},
+        "clarification": {},
         "reflection": {},
         "last_tool_request": {},
         "attempted_tools": [],
@@ -79,6 +81,7 @@ def reset_turn_state(state: dict[str, Any]) -> dict[str, Any]:
     state["last_error"] = {}
     state["input_context"] = {}
     state["plan"] = {}
+    state["clarification"] = {}
     state["reflection"] = {}
     state["last_tool_request"] = {}
     state["attempted_tools"] = []

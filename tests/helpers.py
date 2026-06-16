@@ -10,6 +10,7 @@ def base_state() -> dict:
         "input_context": {},
         "tool_selection": {},
         "plan": {},
+        "clarification": {},
         "reflection": {},
         "last_tool_request": {},
         "attempted_tools": [],

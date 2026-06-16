@@ -21,6 +21,7 @@ def _state(content: str = "你好"):
         "node_runs": [],
         "step_count": 1,
         "max_steps": 8,
+        "clarification": {},
     }
 
 
@@ -56,6 +57,20 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(response["status"], "confirmation_required")
         self.assertEqual(response["type"], "confirmation")
         self.assertEqual(response["confirmation"]["tool_name"], "danger_tool")
+
+    def test_build_response_includes_clarification_metadata(self):
+        """输出结构包含 clarification metadata。"""
+        state = _state("你想让我处理哪段内容？")
+        state["clarification"] = {
+            "question": "你想让我处理哪段内容？",
+            "missing_info": "处理对象",
+            "reason": "操作类请求缺少明确处理对象。",
+        }
+
+        response = build_response(state)
+
+        self.assertEqual(response["metadata"]["clarification"]["missing_info"], "处理对象")
+        self.assertIn("哪段内容", response["metadata"]["clarification"]["question"])
 
     def test_render_cli_response(self):
         """CLI 普通渲染。"""

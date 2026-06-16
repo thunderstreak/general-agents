@@ -104,6 +104,43 @@ class AgentNodeTest(unittest.TestCase):
 
         emit_progress.assert_not_called()
 
+    def test_agent_node_clarification_plan_returns_question_without_llm(self):
+        """clarification plan 直接输出追问，不调用 LLM 或工具。"""
+        state = base_state()
+        state["plan"] = {
+            "intent": "clarification",
+            "mode": "clarification",
+            "plan_steps": [
+                {
+                    "step_id": "step_1",
+                    "action": "clarification",
+                    "tool_name": "",
+                    "args": {},
+                    "reason": "本地判断：需要澄清",
+                }
+            ],
+            "current_step": 0,
+            "decision_reason": "本地判断：需要澄清",
+            "clarification_question": "你想让我处理哪段内容？可以直接贴文本，或用 @文件路径 发给我。",
+            "missing_info": "处理对象",
+            "clarification_reason": "操作类请求缺少明确处理对象。",
+            "status": "ready",
+        }
+
+        with (
+            patch("agent_app.nodes.agent.invoke_with_fallback") as invoke,
+            patch("agent_app.nodes.agent.get_llm_with_tools") as get_tools_model,
+            patch("agent_app.nodes.agent.invoke_tool_agent") as invoke_tool,
+        ):
+            result = agent_node(state)
+
+        invoke.assert_not_called()
+        get_tools_model.assert_not_called()
+        invoke_tool.assert_not_called()
+        self.assertIn("哪段内容", result["messages"][0].content)
+        self.assertEqual(result["clarification"]["missing_info"], "处理对象")
+        self.assertEqual(result["clarification"]["reason"], "操作类请求缺少明确处理对象。")
+
     def test_with_context_includes_conversation_summary(self):
         """有会话摘要时注入摘要上下文。"""
         messages = [HumanMessage(content="继续")]

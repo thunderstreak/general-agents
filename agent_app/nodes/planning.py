@@ -1,6 +1,7 @@
 """Planning 节点与 plan 辅助函数。"""
 
 import time
+from urllib.parse import urlparse
 
 from agent_app.nodes.common import latest_human_message, node_run
 from agent_app.state import AgentState
@@ -49,6 +50,9 @@ def planning_selection(user_text: str, has_user_message: bool, input_context: di
     if (input_context or {}).get("should_retrieve"):
         return ToolSelection(action="chat", confidence=1.0, reason="本地判断：使用知识库检索上下文回答")
     candidate_tool_names = (input_context or {}).get("candidate_tool_names")
+    clarification = clarification_decision(user_text, input_context or {}, candidate_tool_names or [])
+    if clarification:
+        return ToolSelection(action="auto", args=clarification, confidence=1.0, reason="本地判断：需要澄清")
     if should_enter_tool_mode(user_text) or candidate_tool_names:
         return tool_agent_selection(user_text, candidate_tool_names)
     return ToolSelection(action="chat", confidence=1.0, reason="本地判断：普通对话")
@@ -59,6 +63,8 @@ def selection_to_plan(selection: ToolSelection) -> dict:
     action = selection.action if selection.action in {"tool", "chat", "auto"} else "auto"
     if action == "auto" and selection.reason == "本地判断：进入工具 agent 模式":
         action = "tool_agent"
+    if action == "auto" and selection.reason == "本地判断：需要澄清":
+        action = "clarification"
     step = {
         "step_id": "step_1",
         "action": action,
@@ -67,6 +73,7 @@ def selection_to_plan(selection: ToolSelection) -> dict:
         "reason": selection.reason,
     }
     candidate_tool_names = selection.args.get("_candidate_tool_names", []) if isinstance(selection.args, dict) else []
+    clarification = selection.args if action == "clarification" and isinstance(selection.args, dict) else {}
     return {
         "intent": plan_intent(selection),
         "mode": action,
@@ -74,6 +81,9 @@ def selection_to_plan(selection: ToolSelection) -> dict:
         "current_step": 0,
         "decision_reason": selection.reason,
         "candidate_tool_names": candidate_tool_names,
+        "clarification_question": clarification.get("question", ""),
+        "missing_info": clarification.get("missing_info", ""),
+        "clarification_reason": clarification.get("reason", ""),
         "status": "ready",
     }
 
@@ -89,9 +99,90 @@ def plan_intent(selection: ToolSelection) -> str:
         return f"use_tool:{selection.tool_name}"
     if selection.action == "auto" and selection.reason == "本地判断：进入工具 agent 模式":
         return "tool_agent"
+    if selection.action == "auto" and selection.reason == "本地判断：需要澄清":
+        return "clarification"
     if selection.action == "chat":
         return "chat"
     return "auto"
+
+
+def clarification_decision(user_text: str, input_context: dict, candidate_tool_names: list[str]) -> dict:
+    """判断是否需要先向用户澄清。"""
+    normalized = " ".join(str(user_text or "").split()).strip()
+    if not normalized or _has_context_target(normalized, input_context):
+        return {}
+    if _is_memory_instruction(normalized) or _is_weather_request(normalized):
+        return {}
+    if _is_missing_search_query(normalized, candidate_tool_names):
+        return {
+            "question": "你想查询什么内容？请补充关键词或范围。",
+            "missing_info": "查询内容",
+            "reason": "搜索类请求缺少查询对象。",
+        }
+    if _is_missing_operation_target(normalized):
+        return {
+            "question": "你想让我处理哪段内容？可以直接贴文本，或用 @文件路径 发给我。",
+            "missing_info": "处理对象",
+            "reason": "操作类请求缺少明确处理对象。",
+        }
+    return {}
+
+
+def _has_context_target(text: str, input_context: dict) -> bool:
+    """判断输入是否已经包含可处理对象。"""
+    if input_context.get("attachments") or input_context.get("file_errors") or input_context.get("should_retrieve"):
+        return True
+    if "http://" in text or "https://" in text or "[文件:" in text or "[文件内容]" in text:
+        return True
+    return bool(_content_after_action(text))
+
+
+def _content_after_action(text: str) -> str:
+    """提取操作词后的可能对象。"""
+    for keyword in ("优化一下", "分析一下", "改一下", "修改一下", "总结一下", "处理一下", "润色一下"):
+        if keyword not in text:
+            continue
+        _, _, tail = text.partition(keyword)
+        return tail.strip(" ：:，,。.!！?")
+    return ""
+
+
+def _is_memory_instruction(text: str) -> bool:
+    """判断是否为记忆指令。"""
+    return any(keyword in text for keyword in ("记住", "请记住", "帮我记住", "以后记得", "我的偏好"))
+
+
+def _is_weather_request(text: str) -> bool:
+    """判断是否为天气请求。"""
+    return any(keyword in text for keyword in ("天气", "气温", "下雨", "weather"))
+
+
+def _is_missing_search_query(text: str, candidate_tool_names: list[str]) -> bool:
+    """判断搜索类请求是否缺少查询对象。"""
+    stripped = text.strip(" ：:，,。.!！?")
+    if "fetch_url" in candidate_tool_names or urlparse(stripped).scheme in {"http", "https"}:
+        return False
+    search_phrases = {"查一下", "查询一下", "搜索一下", "搜一下", "帮我查一下", "帮我搜索一下", "看看最新", "查最新", "搜索"}
+    return stripped in search_phrases
+
+
+def _is_missing_operation_target(text: str) -> bool:
+    """判断操作类请求是否缺少处理对象。"""
+    stripped = text.strip(" ：:，,。.!！?")
+    operation_phrases = {
+        "帮我优化一下",
+        "优化一下",
+        "帮我分析一下",
+        "分析一下",
+        "帮我改一下",
+        "改一下",
+        "修改一下",
+        "帮我总结一下",
+        "总结一下",
+        "处理一下",
+        "润色一下",
+    }
+    return stripped in operation_phrases
 
 
 def tool_agent_selection(user_text: str, candidate_tool_names: list[str] | None = None) -> ToolSelection:

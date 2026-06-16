@@ -36,6 +36,7 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
             "step_count": state.get("step_count", 0),
             "max_steps": state.get("max_steps", 0),
             "reflection": state.get("reflection", {}),
+            "clarification": state.get("clarification", {}),
         },
     }
 

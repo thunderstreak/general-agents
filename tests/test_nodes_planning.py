@@ -32,6 +32,39 @@ class PlanningNodeTest(unittest.TestCase):
         self.assertEqual(result["plan"]["mode"], "chat")
         self.assertEqual(result["plan"]["plan_steps"][0]["action"], "chat")
 
+    def test_planning_node_missing_operation_target_uses_clarification_plan(self):
+        """缺少处理对象的操作请求生成 clarification plan。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="帮我优化一下")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "clarification")
+        self.assertEqual(result["plan"]["plan_steps"][0]["action"], "clarification")
+        self.assertEqual(result["plan"]["missing_info"], "处理对象")
+        self.assertIn("哪段内容", result["plan"]["clarification_question"])
+
+    def test_planning_node_operation_with_file_context_skips_clarification(self):
+        """已有文件上下文时不触发 clarification。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="帮我优化一下 [文件: docs/demo.md]")]
+        state["input_context"] = {"normalized_text": "帮我优化一下 [文件: docs/demo.md]", "attachments": [{"path": "docs/demo.md"}]}
+
+        result = planning_node(state)
+
+        self.assertNotEqual(result["plan"]["mode"], "clarification")
+
+    def test_planning_node_missing_search_query_uses_clarification_plan(self):
+        """缺少查询对象的搜索请求生成 clarification plan。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="查一下")]
+
+        result = planning_node(state)
+
+        self.assertEqual(result["plan"]["mode"], "clarification")
+        self.assertEqual(result["plan"]["missing_info"], "查询内容")
+        self.assertIn("查询什么内容", result["plan"]["clarification_question"])
+
     def test_planning_node_memory_instruction_uses_chat_plan(self):
         """记忆类设计约束不进入外部工具模式。"""
         state = base_state()
