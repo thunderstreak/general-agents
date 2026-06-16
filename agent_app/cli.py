@@ -13,6 +13,7 @@ from agent_app.config import (
 )
 from agent_app import cli_stream
 from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel_worker
+from agent_app.cli_compact import CompactOperations, auto_compact_if_needed, format_context_usage, format_usage_delta, handle_compact_command
 from agent_app.cli_rag import RagOperations, handle_rag_command
 from agent_app.context_compaction import compact_state, estimate_context_usage, should_auto_compact
 from agent_app.graph import get_app, resume_confirmed_tool
@@ -191,52 +192,7 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
 
 def _handle_compact_command(arg: str, state: dict, session_id: str) -> tuple[bool, dict, str, str]:
     """处理上下文压缩命令。"""
-    subcommand = arg.strip()
-    if subcommand in {"status", "usage"}:
-        print(f"{_format_context_usage(state)}\n")
-        return True, state, session_id, ""
-
-    if subcommand == "show":
-        print(_format_context_usage(state))
-        summary = str(state.get("conversation_summary") or "").strip()
-        if summary:
-            print(f"当前会话摘要：\n{summary}\n")
-        else:
-            print("当前会话暂无压缩摘要。\n")
-        return True, state, session_id, ""
-
-    if subcommand == "clear":
-        state = dict(state)
-        state["conversation_summary"] = ""
-        state["compact_count"] = 0
-        state["last_compacted_at"] = ""
-        _save_current_session(session_id, state)
-        print("已清空当前会话摘要。已压缩移除的短期上下文不会自动恢复。\n")
-        return True, state, session_id, ""
-
-    if subcommand:
-        print("用法：/compact、/compact status、/compact show、/compact clear\n")
-        return True, state, session_id, ""
-
-    before_usage = estimate_context_usage(state, CONTEXT_COMPACT_MESSAGE_THRESHOLD)
-    print(_format_context_usage(state))
-    try:
-        result = _run_cancellable(lambda: compact_state(state, keep_turns=CONTEXT_COMPACT_KEEP_TURNS))
-    except TaskCancelled:
-        return True, state, session_id, ""
-    if not result.archived_messages:
-        print("当前上下文无需压缩。\n")
-        return True, result.state, session_id, ""
-
-    _save_current_session(session_id, result.state, archived_messages=result.archived_messages)
-    after_usage = estimate_context_usage(result.state, CONTEXT_COMPACT_MESSAGE_THRESHOLD)
-    print(
-        f"已压缩上下文：保留最近 {CONTEXT_COMPACT_KEEP_TURNS} 轮，"
-        f"消息数 {before_usage.message_count} -> {after_usage.message_count}，"
-        f"{_format_usage_delta(before_usage, after_usage)}，"
-        f"摘要长度 {len(result.summary)} 字。\n"
-    )
-    return True, result.state, session_id, ""
+    return handle_compact_command(arg, state, session_id, _compact_operations())
 
 
 def _handle_rag_command(arg: str) -> None:
@@ -254,51 +210,31 @@ def _handle_rag_command(arg: str) -> None:
 
 def _auto_compact_if_needed(state: dict, session_id: str) -> dict:
     """按阈值自动压缩上下文。"""
-    if not CONTEXT_COMPACT_ENABLED or not should_auto_compact(state, CONTEXT_COMPACT_MESSAGE_THRESHOLD):
-        return state
-
-    before_usage = estimate_context_usage(state, CONTEXT_COMPACT_MESSAGE_THRESHOLD)
-    try:
-        result = _run_cancellable(lambda: compact_state(state, keep_turns=CONTEXT_COMPACT_KEEP_TURNS))
-    except TaskCancelled:
-        return state
-    if not result.archived_messages:
-        return state
-
-    _save_current_session(session_id, result.state, archived_messages=result.archived_messages)
-    after_usage = estimate_context_usage(result.state, CONTEXT_COMPACT_MESSAGE_THRESHOLD)
-    print(
-        f"已自动压缩上下文：保留最近 {CONTEXT_COMPACT_KEEP_TURNS} 轮，"
-        f"消息数 {before_usage.message_count} -> {after_usage.message_count}，"
-        f"{_format_usage_delta(before_usage, after_usage)}，"
-        f"摘要长度 {len(result.summary)} 字。\n"
-    )
-    return result.state
+    return auto_compact_if_needed(state, session_id, _compact_operations())
 
 
 def _format_context_usage(state: dict) -> str:
     """格式化上下文使用量提示。"""
-    usage = estimate_context_usage(state, CONTEXT_COMPACT_MESSAGE_THRESHOLD)
-    if usage.token_available:
-        return (
-            f"当前上下文使用率：约 {usage.percent}%"
-            f"（{usage.used_tokens}/{usage.context_window_tokens} tokens，"
-            f"预留输出 {usage.reserved_output_tokens}，"
-            f"剩余约 {usage.remaining_tokens} tokens）。"
-        )
-    if usage.threshold <= 0:
-        return f"当前上下文使用率：未启用阈值统计（当前 {usage.message_count} 条消息，token 统计不可用）。"
-    return f"当前上下文使用率：约 {usage.percent}%（{usage.message_count}/{usage.threshold} 条消息，token 统计不可用）。"
+    return format_context_usage(state, _compact_operations())
 
 
 def _format_usage_delta(before_usage, after_usage) -> str:
     """格式化压缩前后使用率变化。"""
-    if before_usage.token_available and after_usage.token_available:
-        return (
-            f"token 使用率 {before_usage.percent}% -> {after_usage.percent}%"
-            f"（{before_usage.used_tokens} -> {after_usage.used_tokens} tokens）"
-        )
-    return f"使用率 {before_usage.percent}% -> {after_usage.percent}%"
+    return format_usage_delta(before_usage, after_usage)
+
+
+def _compact_operations() -> CompactOperations:
+    """构造上下文压缩依赖。"""
+    return CompactOperations(
+        compact_state=compact_state,
+        estimate_context_usage=estimate_context_usage,
+        should_auto_compact=should_auto_compact,
+        save_current_session=_save_current_session,
+        run_cancellable=_run_cancellable,
+        enabled=CONTEXT_COMPACT_ENABLED,
+        keep_turns=CONTEXT_COMPACT_KEEP_TURNS,
+        message_threshold=CONTEXT_COMPACT_MESSAGE_THRESHOLD,
+    )
 
 
 def _save_current_session(session_id: str, state: dict, archived_messages: list | None = None) -> None:
