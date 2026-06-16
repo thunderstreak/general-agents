@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -34,37 +29,32 @@ from agent_app.config import (
 )
 from agent_app.file_inputs.parser import parse_file
 from agent_app.rag.embeddings import OpenAICompatibleEmbeddings
+from agent_app.rag.metadata import (
+    KnowledgeDocument,
+    chunk_id,
+    chunk_source_metadata,
+    chunks_path,
+    content_hash,
+    document_id,
+    documents_path,
+    load_chunk_records,
+    load_documents,
+    nearest_marker_value,
+    remove_chunk_records,
+    replace_chunk_records,
+    save_chunk_records,
+    save_documents,
+)
+from agent_app.rag.query import keyword_score_for, normalize_query as _normalize_query, query_terms, rerank_results as _rerank_results
+from agent_app.rag.vector_store import emit_progress, raw_collection, reset_vector_store
 
 
-DOCUMENTS_FILE_NAME = "documents.json"
-CHUNKS_FILE_NAME = "chunks.jsonl"
-PDF_PAGE_PATTERN = re.compile(r"^## 第 (?P<page>\d+) 页$", re.MULTILINE)
-XLSX_SHEET_PATTERN = re.compile(r"^## 工作表：(?P<sheet>.+)$", re.MULTILINE)
 ProgressCallback = Callable[[str], None]
 _EMBEDDINGS_CACHE: dict[tuple[Any, ...], Any] = {}
 
 
 class KnowledgeBaseError(RuntimeError):
     """知识库操作失败。"""
-
-
-@dataclass
-class KnowledgeDocument:
-    """知识库文档 metadata。"""
-
-    document_id: str
-    title: str
-    path: str
-    content_hash: str
-    created_at: float
-    updated_at: float
-    chunk_count: int
-    chunk_ids: list[str]
-    active: bool = True
-
-    def to_dict(self) -> dict[str, Any]:
-        """转换为 JSON 字典。"""
-        return asdict(self)
 
 
 def add_document(path: str) -> dict[str, Any]:
@@ -256,24 +246,12 @@ def search_knowledge(query: str, top_k: int | None = None, progress: ProgressCal
 
 def normalize_query(query: str) -> str:
     """规范化 RAG 查询文本。"""
-    text = str(query or "")
-    for prefix in ("根据知识库", "根据文档", "根据资料", "从知识库", "检索", "查询知识库"):
-        text = text.replace(prefix, " ")
-    return " ".join(text.split())
+    return _normalize_query(query)
 
 
 def rerank_results(query: str, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """结合向量分数和关键词命中重排结果。"""
-    reranked = []
-    for item in results:
-        vector_score = float(item.get("vector_score", item.get("score", 0.0)) or 0.0)
-        keyword_score = float(item.get("keyword_score", _keyword_score(query, item, item.get("content", ""))) or 0.0)
-        combined_score = vector_score + keyword_score * RAG_KEYWORD_WEIGHT
-        updated = dict(item)
-        updated["keyword_score"] = round(keyword_score, 4)
-        updated["score"] = round(combined_score, 4)
-        reranked.append(updated)
-    return sorted(reranked, key=lambda item: item.get("score", 0.0), reverse=True)
+    return _rerank_results(query, results, RAG_KEYWORD_WEIGHT)
 
 
 def _ensure_rag_enabled() -> None:
@@ -333,8 +311,7 @@ def _clear_embeddings_cache() -> None:
 
 def _emit_progress(progress: ProgressCallback | None, message: str) -> None:
     """发送 RAG 内部阶段进度。"""
-    if progress is not None:
-        progress(message)
+    emit_progress(progress, message)
 
 
 def _check_cancelled() -> None:
@@ -359,94 +336,52 @@ def _delete_vectors(chunk_ids: list[str]) -> None:
 
 def _reset_vector_store() -> None:
     """清空 Chroma collection。"""
-    try:
-        client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-        try:
-            client.delete_collection(CHROMA_COLLECTION_NAME)
-        except Exception:
-            pass
-    except Exception:
-        pass
+    reset_vector_store()
 
 
 def _raw_collection():
     """获取不需要 embedding 的 Chroma collection。"""
-    try:
-        client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-        return client.get_collection(CHROMA_COLLECTION_NAME)
-    except Exception:
-        return None
+    return raw_collection()
 
 
 def _load_documents() -> dict[str, dict[str, Any]]:
     """读取文档 metadata。"""
-    path = _documents_path()
-    if not path.exists():
-        return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
-    raw_documents = data.get("documents", []) if isinstance(data, dict) else data
-    documents = {}
-    for item in raw_documents:
-        if isinstance(item, dict) and item.get("document_id"):
-            documents[item["document_id"]] = item
-    return documents
+    return load_documents(RAG_STORE_DIR)
 
 
 def _save_documents(documents: dict[str, dict[str, Any]]) -> None:
     """保存文档 metadata。"""
-    path = _documents_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = {"documents": sorted(documents.values(), key=lambda item: item.get("updated_at", 0), reverse=True)}
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_documents(documents, RAG_STORE_DIR)
 
 
 def _documents_path() -> Path:
     """获取文档 metadata 路径。"""
-    return Path(RAG_STORE_DIR) / DOCUMENTS_FILE_NAME
+    return documents_path(RAG_STORE_DIR)
 
 
 def _chunks_path() -> Path:
     """获取 chunk metadata 路径。"""
-    return Path(RAG_STORE_DIR) / CHUNKS_FILE_NAME
+    return chunks_path(RAG_STORE_DIR)
 
 
 def _load_chunk_records() -> list[dict[str, Any]]:
     """读取 chunk metadata。"""
-    path = _chunks_path()
-    if not path.exists():
-        return []
-    records = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(item, dict) and item.get("chunk_id"):
-            records.append(item)
-    return records
+    return load_chunk_records(RAG_STORE_DIR)
 
 
 def _save_chunk_records(records: list[dict[str, Any]]) -> None:
     """保存 chunk metadata。"""
-    path = _chunks_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [json.dumps(item, ensure_ascii=False, sort_keys=True) for item in records]
-    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    save_chunk_records(records, RAG_STORE_DIR)
 
 
 def _replace_chunk_records(document_id: str, new_records: list[dict[str, Any]]) -> None:
     """替换单个文档的 chunk metadata。"""
-    records = [item for item in _load_chunk_records() if item.get("document_id") != document_id]
-    records.extend(new_records)
-    _save_chunk_records(records)
+    replace_chunk_records(document_id, new_records, RAG_STORE_DIR)
 
 
 def _remove_chunk_records(document_id: str) -> None:
     """删除单个文档的 chunk metadata。"""
-    records = [item for item in _load_chunk_records() if item.get("document_id") != document_id]
-    _save_chunk_records(records)
+    remove_chunk_records(document_id, RAG_STORE_DIR)
 
 
 def _rollback_document_import(document_id: str, chunk_ids: list[str], previous_document: dict | None, documents: dict[str, dict[str, Any]]) -> None:
@@ -462,59 +397,34 @@ def _rollback_document_import(document_id: str, chunk_ids: list[str], previous_d
 
 def _document_id(path: Path) -> str:
     """根据绝对路径生成稳定 document id。"""
-    return hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+    return document_id(path)
 
 
 def _content_hash(content: str) -> str:
     """生成文档内容 hash。"""
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return content_hash(content)
 
 
 def _chunk_id(document_id: str, content_hash: str, index: int) -> str:
     """生成稳定 chunk id。"""
-    return f"{document_id}:{content_hash[:12]}:{index}"
+    return chunk_id(document_id, content_hash, index)
 
 
 def _chunk_source_metadata(content: str, chunk: str) -> dict[str, Any]:
     """提取 chunk 对应的轻量来源 metadata。"""
-    start = content.find(chunk)
-    if start < 0:
-        start = 0
-    end = start + len(chunk)
-    metadata: dict[str, Any] = {}
-    page = _nearest_marker_value(PDF_PAGE_PATTERN, content, end, "page")
-    if page:
-        metadata["page"] = page
-    sheet = _nearest_marker_value(XLSX_SHEET_PATTERN, content, end, "sheet")
-    if sheet:
-        metadata["sheet"] = sheet
-    return metadata
+    return chunk_source_metadata(content, chunk)
 
 
-def _nearest_marker_value(pattern: re.Pattern, content: str, offset: int, group_name: str) -> str:
+def _nearest_marker_value(pattern, content: str, offset: int, group_name: str) -> str:
     """查找 offset 前最近的章节标记。"""
-    value = ""
-    for match in pattern.finditer(content):
-        if match.start() > offset:
-            break
-        value = match.group(group_name).strip()
-    return value
+    return nearest_marker_value(pattern, content, offset, group_name)
 
 
 def _keyword_score(query: str, metadata: dict[str, Any], content: str) -> float:
     """计算关键词命中分。"""
-    terms = _query_terms(query)
-    if not terms:
-        return 0.0
-    haystack = f"{metadata.get('title', '')} {metadata.get('source', '')} {content}".lower()
-    hits = sum(1 for term in terms if term.lower() in haystack)
-    return hits / len(terms)
+    return keyword_score_for(query, metadata, content)
 
 
 def _query_terms(query: str) -> list[str]:
     """提取查询关键词。"""
-    text = normalize_query(query)
-    raw_terms = re.findall(r"[\w\u4e00-\u9fff]+", text)
-    stopwords = {"根据", "知识库", "文档", "资料", "回答", "什么", "一下", "这个", "关于", "请", "帮我"}
-    terms = [term for term in raw_terms if len(term) > 1 and term not in stopwords]
-    return list(dict.fromkeys(terms))
+    return query_terms(query)
