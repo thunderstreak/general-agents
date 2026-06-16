@@ -36,7 +36,14 @@ def run_cli():
     pending_delete_session_id = ""
 
     while True:
-        user_input = _read_user_input()
+        try:
+            user_input = _read_user_input()
+        except KeyboardInterrupt:
+            print("\n已取消当前输入。输入 'quit' 退出。\n")
+            continue
+        except EOFError:
+            print()
+            break
         if user_input.lower() == "quit":
             break
 

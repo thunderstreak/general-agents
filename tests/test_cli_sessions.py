@@ -160,6 +160,19 @@ class CliSessionCommandTest(unittest.TestCase):
                 with self.assertRaises(cli.TaskCancelled):
                     cli._run_turn_cancellable({"messages": []})
 
+    def test_run_cli_input_keyboard_interrupt_continues(self):
+        """输入阶段 Ctrl+C 不应打印 traceback 或退出异常。"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with (
+                _patch_store_dir(tmp_dir),
+                patch("agent_app.cli._read_user_input", side_effect=[KeyboardInterrupt(), "quit"]),
+            ):
+                buffer = io.StringIO()
+                with redirect_stdout(buffer):
+                    cli.run_cli()
+
+        self.assertIn("已取消当前输入", buffer.getvalue())
+
 
 def _patch_store_dir(tmp_dir: str):
     """patch CLI 和 store 使用临时目录。"""
