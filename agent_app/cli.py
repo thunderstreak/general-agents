@@ -15,6 +15,13 @@ from agent_app import cli_stream
 from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel_worker
 from agent_app.cli_compact import CompactOperations, auto_compact_if_needed, format_context_usage, format_usage_delta, handle_compact_command
 from agent_app.cli_rag import RagOperations, handle_rag_command
+from agent_app.cli_sessions import (
+    SessionOperations,
+    handle_session_command,
+    print_current_session,
+    print_sessions,
+    session_metadata_or_current,
+)
 from agent_app.context_compaction import compact_state, estimate_context_usage, should_auto_compact
 from agent_app.graph import get_app, resume_confirmed_tool
 from agent_app.rag import add_document, clear_knowledge_base, delete_document as delete_knowledge_document
@@ -150,41 +157,9 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
     if command == "/compact":
         return _handle_compact_command(arg, state, session_id)
 
-    if command == "/sessions":
-        _print_sessions()
-        return True, state, session_id, ""
-
-    if command == "/current":
-        _print_current_session(session_id)
-        return True, state, session_id, ""
-
-    if command == "/new":
-        session = create_session()
-        new_state = create_initial_state()
-        _save_current_session(session.session_id, new_state)
-        print(f"已创建并切换到新会话：{session.session_id}\n")
-        return True, new_state, session.session_id, ""
-
-    if command == "/resume":
-        if not arg:
-            print("用法：/resume <session_id>\n")
-            return True, state, session_id, ""
-        if not session_exists(arg):
-            print(f"会话不存在：{arg}\n")
-            return True, state, session_id, ""
-        resumed_state = ensure_state_defaults(load_session_state(arg))
-        print(f"已恢复会话：{arg}\n")
-        return True, resumed_state, arg, ""
-
-    if command == "/delete":
-        if not arg:
-            print("用法：/delete <session_id>\n")
-            return True, state, session_id, ""
-        if not session_exists(arg):
-            print(f"会话不存在：{arg}\n")
-            return True, state, session_id, ""
-        print(f"确认删除会话 {arg}？请输入 yes 确认，或 no 取消。\n")
-        return True, state, session_id, arg
+    handled, next_state, next_session_id, pending_delete = handle_session_command(command, arg, state, session_id, _session_operations())
+    if handled:
+        return handled, next_state, next_session_id, pending_delete
 
     print("未知命令。可用命令：/rag、/compact、/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
     return True, state, session_id, ""
@@ -246,34 +221,30 @@ def _save_current_session(session_id: str, state: dict, archived_messages: list 
 
 def _print_sessions() -> None:
     """打印会话列表。"""
-    sessions = list_sessions()
-    if not sessions:
-        print("暂无历史会话。\n")
-        return
-
-    print("历史会话：")
-    for item in sessions:
-        title = item.title or "未命名会话"
-        last_input = f" | 最后输入：{item.last_user_input}" if item.last_user_input else ""
-        print(f"- {item.session_id} | {title} | {item.updated_at} | {item.message_count} 条消息{last_input}")
-    print()
+    print_sessions(_session_operations())
 
 
 def _print_current_session(session_id: str) -> None:
     """打印当前会话。"""
-    for item in list_sessions():
-        if item.session_id == session_id:
-            print(f"当前会话：{item.session_id} | {item.title} | {item.updated_at} | {item.message_count} 条消息\n")
-            return
-    print(f"当前会话：{session_id}\n")
+    print_current_session(session_id, _session_operations())
 
 
 def _session_metadata_or_current(session_id: str, current_session):
     """命令切换后获取会话元数据，不存在时保留旧对象。"""
-    for item in list_sessions():
-        if item.session_id == session_id:
-            return item
-    return current_session
+    return session_metadata_or_current(session_id, current_session, _session_operations())
+
+
+def _session_operations() -> SessionOperations:
+    """构造会话命令依赖。"""
+    return SessionOperations(
+        create_session=create_session,
+        create_initial_state=create_initial_state,
+        ensure_state_defaults=ensure_state_defaults,
+        load_session_state=load_session_state,
+        session_exists=session_exists,
+        list_sessions=list_sessions,
+        save_current_session=_save_current_session,
+    )
 
 
 def _print_response(state: dict) -> None:
