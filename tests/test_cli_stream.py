@@ -8,6 +8,7 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessageChunk, ToolMessage
 
 from agent_app import cli
+from agent_app.cli import stream as cli_stream
 
 
 class FakeInvokeApp:
@@ -51,12 +52,12 @@ class CliStreamTest(unittest.TestCase):
 
     def test_message_chunk_text_filters_empty_tool_and_nostream_chunks(self):
         """空内容、工具调用、工具消息和 nostream 内部模型不输出。"""
-        self.assertEqual(cli._message_chunk_text((AIMessageChunk(content=""), {})), "")
-        self.assertEqual(cli._message_chunk_text((AIMessageChunk(content="内部"), {"tags": ["nostream"]})), "")
-        self.assertEqual(cli._message_chunk_text((ToolMessage(content="工具结果", tool_call_id="tool_1"), {})), "")
+        self.assertEqual(cli_stream.message_chunk_text((AIMessageChunk(content=""), {})), "")
+        self.assertEqual(cli_stream.message_chunk_text((AIMessageChunk(content="内部"), {"tags": ["nostream"]})), "")
+        self.assertEqual(cli_stream.message_chunk_text((ToolMessage(content="工具结果", tool_call_id="tool_1"), {})), "")
         tool_chunk = AIMessageChunk(content="", tool_call_chunks=[{"name": "web_search", "args": "", "id": "1", "index": 0}])
-        self.assertEqual(cli._message_chunk_text((tool_chunk, {})), "")
-        self.assertEqual(cli._message_chunk_text((AIMessageChunk(content="你好"), {})), "你好")
+        self.assertEqual(cli_stream.message_chunk_text((tool_chunk, {})), "")
+        self.assertEqual(cli_stream.message_chunk_text((AIMessageChunk(content="你好"), {})), "你好")
 
     def test_stream_response_prints_progress_and_tokens(self):
         """流式输出进度和模型 token，并返回最终 state。"""
@@ -97,18 +98,18 @@ class CliStreamTest(unittest.TestCase):
 
     def test_update_progress_ignores_normal_chat_nodes(self):
         """普通节点 updates 不应显示检索、规划、思考等噪音进度。"""
-        self.assertEqual(cli._update_progress_message({"retrieval": {}}), "")
-        self.assertEqual(cli._update_progress_message({"planning": {}}), "")
-        self.assertEqual(cli._update_progress_message({"agent": {}}), "")
-        self.assertEqual(cli._update_progress_message({"memory": {}}), "")
-        self.assertEqual(cli._update_progress_message({"response": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"retrieval": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"planning": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"agent": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"memory": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"response": {}}), "")
 
     def test_update_progress_keeps_only_actionable_state_fallbacks(self):
         """只保留需要用户感知的状态兜底进度。"""
-        self.assertEqual(cli._update_progress_message({"confirm": {}}), "等待人工确认...")
-        self.assertEqual(cli._update_progress_message({"tools": {}}), "")
-        self.assertEqual(cli._update_progress_message({"reflection": {}}), "")
-        self.assertEqual(cli._update_progress_message({"error": {}}), "生成错误响应...")
+        self.assertEqual(cli_stream.update_progress_message({"confirm": {}}), "等待人工确认...")
+        self.assertEqual(cli_stream.update_progress_message({"tools": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"reflection": {}}), "")
+        self.assertEqual(cli_stream.update_progress_message({"error": {}}), "生成错误响应...")
 
     def test_stream_response_prints_tool_custom_progress(self):
         """工具 custom 事件仍应显示进度。"""
@@ -386,10 +387,10 @@ class CliStreamTest(unittest.TestCase):
             "node_runs": [{"node_name": "agent", "success": True, "duration_ms": 1.0, "error": ""}],
         }
 
-        with patch("agent_app.cli_stream.OUTPUT_DEBUG", True):
+        with patch("agent_app.cli.stream.OUTPUT_DEBUG", True):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
-                cli._print_debug_tail(state)
+                cli_stream.print_debug_tail(state)
 
         self.assertNotIn("Debug:", buffer.getvalue())
 

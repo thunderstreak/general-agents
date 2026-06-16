@@ -7,7 +7,7 @@ import threading
 import time
 from unittest.mock import patch
 
-from agent_app import cli_cancel
+from agent_app.cli import cancel as cli_cancel
 
 
 class CliCancelTest(unittest.TestCase):
@@ -45,7 +45,7 @@ class CliCancelTest(unittest.TestCase):
 
     def test_run_with_esc_cancel_converts_keyboard_interrupt(self):
         """KeyboardInterrupt 会转换为 TaskCancelled。"""
-        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+        with patch("agent_app.cli.cancel.esc_cancel_listener"):
             with redirect_stdout(io.StringIO()):
                 with self.assertRaises(cli_cancel.TaskCancelled):
                     cli_cancel.run_with_esc_cancel(lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
@@ -61,19 +61,19 @@ class CliCancelTest(unittest.TestCase):
 
     def test_run_with_esc_cancel_clears_cancel_flag(self):
         """任务包装器结束后会清理取消标记。"""
-        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+        with patch("agent_app.cli.cancel.esc_cancel_listener"):
             self.assertEqual(cli_cancel.run_with_esc_cancel(lambda: "ok"), "ok")
 
         self.assertFalse(cli_cancel.is_cancel_requested())
 
     def test_run_with_esc_cancel_worker_returns_result(self):
         """worker 执行器正常返回结果。"""
-        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+        with patch("agent_app.cli.cancel.esc_cancel_listener"):
             self.assertEqual(cli_cancel.run_with_esc_cancel_worker(lambda: "ok"), "ok")
 
     def test_run_with_esc_cancel_worker_propagates_exception(self):
         """worker 执行器透传任务异常。"""
-        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+        with patch("agent_app.cli.cancel.esc_cancel_listener"):
             with self.assertRaises(ValueError):
                 cli_cancel.run_with_esc_cancel_worker(lambda: (_ for _ in ()).throw(ValueError("bad")))
 
@@ -115,9 +115,9 @@ class CliCancelTest(unittest.TestCase):
             return [], [], []
 
         with (
-            patch("agent_app.cli_cancel.select.select", side_effect=fake_select),
-            patch("agent_app.cli_cancel.sys.stdin.read", side_effect=lambda _: read_calls.__setitem__("count", read_calls["count"] + 1)),
-            patch("agent_app.cli_cancel.os.kill") as kill,
+            patch("agent_app.cli.cancel.select.select", side_effect=fake_select),
+            patch("agent_app.cli.cancel.sys.stdin.read", side_effect=lambda _: read_calls.__setitem__("count", read_calls["count"] + 1)),
+            patch("agent_app.cli.cancel.os.kill") as kill,
         ):
             cli_cancel._listen_for_esc(stop_event)
 
@@ -126,7 +126,7 @@ class CliCancelTest(unittest.TestCase):
 
     def test_listener_disabled_when_config_false(self):
         """配置关闭时不启用 Esc 监听。"""
-        with patch("agent_app.cli_cancel.CLI_ESC_CANCEL", False):
+        with patch("agent_app.cli.cancel.CLI_ESC_CANCEL", False):
             self.assertFalse(cli_cancel._should_enable_esc_listener())
 
 

@@ -30,15 +30,6 @@ from agent_app.session_store import create_session, delete_session, list_session
 from agent_app.state import create_initial_state, ensure_state_defaults, reset_turn_state
 
 
-_stream_chunk_type = cli_stream.stream_chunk_type
-_stream_chunk_data = cli_stream.stream_chunk_data
-_message_chunk_text = cli_stream.message_chunk_text
-_custom_progress_message = cli_stream.custom_progress_message
-_update_progress_message = cli_stream.update_progress_message
-_print_progress = cli_stream.print_progress
-_print_debug_tail = cli_stream.print_debug_tail
-
-
 def run_cli():
     """启动命令行 Agent。"""
     print("🧠 LangGraph Agent 启动 (输入 'quit' 退出，任务运行中按 Esc 取消)\n")

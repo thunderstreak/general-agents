@@ -3,7 +3,8 @@
 import unittest
 from unittest.mock import patch
 
-from agent_app import cli_cancel, llm
+from agent_app import llm
+from agent_app.cli import cancel as cli_cancel
 
 
 class LlmTest(unittest.TestCase):

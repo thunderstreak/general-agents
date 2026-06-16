@@ -83,7 +83,7 @@
 
   以下文件各自独立定义了相同的正则表达式：
   - agent_app/nodes/agent.py
-  - agent_app/cli_stream.py
+  - agent_app/cli/stream.py
   - agent_app/nodes/response.py
   
   解决方案：创建 agent_app/utils/regex.py
