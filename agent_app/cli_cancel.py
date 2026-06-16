@@ -25,6 +25,9 @@ ESC = "\x1b"
 ESC_SEQUENCE_PREFIXES = {"[", "O"}
 _CANCEL_EVENT = threading.Event()
 WORKER_POLL_INTERVAL_SECONDS = 0.03
+ESC_SEQUENCE_GRACE_SECONDS = 0.12
+ESC_SEQUENCE_DRAIN_SECONDS = 0.005
+ESC_SEQUENCE_MAX_DRAIN_CHARS = 64
 
 
 class TaskCancelled(RuntimeError):
@@ -144,6 +147,7 @@ def should_cancel_from_chars(
     *,
     has_pending: Callable[[], bool] | None = None,
     read_next: Callable[[], str] | None = None,
+    drain_remaining: Callable[[], None] | None = None,
 ) -> bool:
     """判断读取到的字符是否代表纯 Esc。"""
     if chars != ESC:
@@ -153,7 +157,11 @@ def should_cancel_from_chars(
     if not has_pending():
         return True
     next_char = read_next()
-    return next_char not in ESC_SEQUENCE_PREFIXES
+    if next_char in ESC_SEQUENCE_PREFIXES:
+        if drain_remaining is not None:
+            drain_remaining()
+        return False
+    return True
 
 
 def _listen_for_esc(stop_event: threading.Event) -> None:
@@ -163,15 +171,23 @@ def _listen_for_esc(stop_event: threading.Event) -> None:
         if not ready:
             continue
         char = sys.stdin.read(1)
-        if should_cancel_from_chars(char):
+        if should_cancel_from_chars(char, drain_remaining=_drain_pending_escape_sequence):
             request_cancel()
             os.kill(os.getpid(), signal.SIGINT)
             return
 
 
-def _stdin_has_pending() -> bool:
+def _drain_pending_escape_sequence() -> None:
+    """清理已识别 ESC 控制序列的剩余输入。"""
+    drained = 0
+    while drained < ESC_SEQUENCE_MAX_DRAIN_CHARS and _stdin_has_pending(ESC_SEQUENCE_DRAIN_SECONDS):
+        sys.stdin.read(1)
+        drained += 1
+
+
+def _stdin_has_pending(timeout: float = ESC_SEQUENCE_GRACE_SECONDS) -> bool:
     """判断 stdin 是否有后续字符。"""
-    ready, _, _ = select.select([sys.stdin], [], [], 0.03)
+    ready, _, _ = select.select([sys.stdin], [], [], timeout)
     return bool(ready)
 
 

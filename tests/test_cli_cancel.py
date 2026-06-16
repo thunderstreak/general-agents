@@ -21,6 +21,24 @@ class CliCancelTest(unittest.TestCase):
         """方向键 ESC sequence 不触发取消。"""
         self.assertFalse(cli_cancel.should_cancel_from_chars("\x1b", has_pending=lambda: True, read_next=lambda: "["))
 
+    def test_escape_sequence_drains_remaining_chars(self):
+        """已识别的 ESC sequence 会清理剩余字符。"""
+        drained = []
+
+        self.assertFalse(
+            cli_cancel.should_cancel_from_chars(
+                "\x1b",
+                has_pending=lambda: True,
+                read_next=lambda: "[",
+                drain_remaining=lambda: drained.append("drained"),
+            )
+        )
+        self.assertEqual(drained, ["drained"])
+
+    def test_escape_with_non_sequence_suffix_triggers_cancel(self):
+        """ESC 后接普通字符仍视为取消。"""
+        self.assertTrue(cli_cancel.should_cancel_from_chars("\x1b", has_pending=lambda: True, read_next=lambda: "x"))
+
     def test_non_esc_does_not_trigger_cancel(self):
         """非 Esc 字符不触发取消。"""
         self.assertFalse(cli_cancel.should_cancel_from_chars("a", has_pending=lambda: False))
