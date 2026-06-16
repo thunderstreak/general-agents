@@ -14,6 +14,7 @@ from agent_app.config import (
 from agent_app.cli import stream as cli_stream
 from agent_app.cli.cancel import TaskCancelled, run_with_esc_cancel_worker
 from agent_app.cli.compact import CompactOperations, auto_compact_if_needed, format_context_usage, format_usage_delta, handle_compact_command
+from agent_app.cli.memory import MemoryOperations, handle_memory_command
 from agent_app.cli.rag import RagOperations, handle_rag_command
 from agent_app.cli.sessions import (
     SessionOperations,
@@ -24,6 +25,7 @@ from agent_app.cli.sessions import (
 )
 from agent_app.context_compaction import compact_state, estimate_context_usage, should_auto_compact
 from agent_app.graph import get_app, resume_confirmed_tool
+from agent_app.memory import clear_memory, delete_memory_item, list_memory
 from agent_app.rag import add_document, clear_knowledge_base, delete_document as delete_knowledge_document
 from agent_app.rag import list_documents, rebuild_knowledge_base, sync_knowledge_base
 from agent_app.session_store import create_session, delete_session, list_sessions, load_session_state, save_session_state, session_exists
@@ -148,11 +150,15 @@ def _handle_cli_command(user_input: str, state: dict, session_id: str) -> tuple[
     if command == "/compact":
         return _handle_compact_command(arg, state, session_id)
 
+    if command == "/memory":
+        _handle_memory_command(arg)
+        return True, state, session_id, ""
+
     handled, next_state, next_session_id, pending_delete = handle_session_command(command, arg, state, session_id, _session_operations())
     if handled:
         return handled, next_state, next_session_id, pending_delete
 
-    print("未知命令。可用命令：/rag、/compact、/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
+    print("未知命令。可用命令：/rag、/compact、/memory、/sessions、/resume <session_id>、/new、/delete <session_id>、/current\n")
     return True, state, session_id, ""
 
 
@@ -172,6 +178,16 @@ def _handle_rag_command(arg: str) -> None:
         rebuild_knowledge_base=rebuild_knowledge_base,
     )
     handle_rag_command(arg, _run_cancellable, operations)
+
+
+def _handle_memory_command(arg: str) -> None:
+    """处理长期记忆命令。"""
+    operations = MemoryOperations(
+        list_memory=list_memory,
+        delete_memory_item=delete_memory_item,
+        clear_memory=clear_memory,
+    )
+    handle_memory_command(arg, operations)
 
 
 def _auto_compact_if_needed(state: dict, session_id: str) -> dict:

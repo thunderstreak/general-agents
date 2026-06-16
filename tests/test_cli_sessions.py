@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agent_app import cli, session_store
 from agent_app.context_compaction import ContextUsage
+from agent_app.memory import MemoryItem, MemoryStore
 from agent_app.state import create_initial_state, reset_turn_state
 
 
@@ -152,6 +153,70 @@ class CliSessionCommandTest(unittest.TestCase):
 
         self.assertTrue(handled)
         self.assertIn("知识库重建完成", buffer.getvalue())
+
+    def test_memory_list_command(self):
+        """`/memory list` 显示长期记忆。"""
+        store = MemoryStore(items=[MemoryItem(id="mem_1", content="用户喜欢中文", category="preference", created_at="2026-01-01T00:00:00")], summary="摘要")
+        with patch("agent_app.cli.list_memory", return_value=store):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/memory list", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("历史摘要", buffer.getvalue())
+        self.assertIn("memory_id=mem_1", buffer.getvalue())
+        self.assertIn("用户喜欢中文", buffer.getvalue())
+
+    def test_memory_list_summary_without_items_prints_no_deletable_items(self):
+        """只有摘要时提示没有可删除条目。"""
+        with patch("agent_app.cli.list_memory", return_value=MemoryStore(summary="摘要")):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/memory list", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("历史摘要", buffer.getvalue())
+        self.assertIn("没有可删除的长期记忆条目", buffer.getvalue())
+
+    def test_memory_delete_command(self):
+        """`/memory delete` 删除指定长期记忆。"""
+        with patch("agent_app.cli.delete_memory_item", return_value=True):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/memory delete mem_1", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("已删除长期记忆：mem_1", buffer.getvalue())
+
+    def test_memory_delete_missing_command(self):
+        """`/memory delete` 删除不存在记忆时提示。"""
+        with patch("agent_app.cli.delete_memory_item", return_value=False):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/memory delete missing", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("长期记忆不存在：missing", buffer.getvalue())
+
+    def test_memory_clear_command(self):
+        """`/memory clear` 清空长期记忆。"""
+        with patch("agent_app.cli.clear_memory") as clear:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                handled, _, _, _ = cli._handle_cli_command("/memory clear", {}, "current")
+
+        self.assertTrue(handled)
+        clear.assert_called_once_with()
+        self.assertIn("已清空长期记忆", buffer.getvalue())
+
+    def test_memory_help_command(self):
+        """`/memory` 显示帮助。"""
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            handled, _, _, _ = cli._handle_cli_command("/memory", {}, "current")
+
+        self.assertTrue(handled)
+        self.assertIn("/memory list", buffer.getvalue())
 
     def test_run_turn_cancellable_raises_task_cancelled(self):
         """单轮执行取消时抛出 TaskCancelled。"""

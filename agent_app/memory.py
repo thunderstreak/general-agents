@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,14 @@ from agent_app.config import MEMORY_FILE_PATH, MEMORY_MAX_ITEMS
 from agent_app.utils.messages import message_text
 
 
+MEMORY_SCHEMA_VERSION = 2
+
+
+def _new_memory_id() -> str:
+    """生成长期记忆 ID。"""
+    return f"mem_{uuid.uuid4().hex}"
+
+
 @dataclass
 class MemoryItem:
     """单条长期记忆。"""
@@ -23,6 +32,7 @@ class MemoryItem:
     category: str = "fact"
     source: str = "user"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    id: str = field(default_factory=_new_memory_id)
 
     def to_dict(self) -> dict[str, str]:
         """转换为可序列化字典。"""
@@ -35,10 +45,12 @@ class MemoryStore:
 
     items: list[MemoryItem] = field(default_factory=list)
     summary: str = ""
+    schema_version: int = MEMORY_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         """转换为 JSON 存储结构。"""
         return {
+            "schema_version": self.schema_version,
             "items": [item.to_dict() for item in self.items],
             "summary": self.summary,
         }
@@ -57,14 +69,13 @@ def load_memory() -> MemoryStore:
 
     items = []
     for raw_item in payload.get("items", []):
-        if not isinstance(raw_item, dict) or not raw_item.get("content"):
-            continue
         items.append(
             MemoryItem(
                 content=str(raw_item["content"]),
                 category=str(raw_item.get("category", "fact")),
                 source=str(raw_item.get("source", "user")),
                 created_at=str(raw_item.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+                id=str(raw_item["id"]),
             )
         )
 
@@ -76,7 +87,29 @@ def save_memory(memory: MemoryStore) -> None:
     path = Path(MEMORY_FILE_PATH).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     memory.items = memory.items[-MEMORY_MAX_ITEMS:]
+    memory.schema_version = MEMORY_SCHEMA_VERSION
     path.write_text(json.dumps(memory.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def list_memory() -> MemoryStore:
+    """列出长期记忆。"""
+    return load_memory()
+
+
+def delete_memory_item(memory_id: str) -> bool:
+    """按 ID 删除长期记忆。"""
+    memory = load_memory()
+    next_items = [item for item in memory.items if item.id != memory_id]
+    if len(next_items) == len(memory.items):
+        return False
+    memory.items = next_items
+    save_memory(memory)
+    return True
+
+
+def clear_memory() -> None:
+    """清空长期记忆。"""
+    save_memory(MemoryStore())
 
 
 def memory_to_state(memory: MemoryStore) -> dict[str, Any]:
@@ -91,15 +124,15 @@ def state_to_memory(memory_state: dict[str, Any] | None) -> MemoryStore:
 
     items = []
     for raw_item in memory_state.get("items", []):
-        if isinstance(raw_item, dict) and raw_item.get("content"):
-            items.append(
-                MemoryItem(
-                    content=str(raw_item["content"]),
-                    category=str(raw_item.get("category", "fact")),
-                    source=str(raw_item.get("source", "user")),
-                    created_at=str(raw_item.get("created_at") or datetime.now().isoformat(timespec="seconds")),
-                )
+        items.append(
+            MemoryItem(
+                content=str(raw_item["content"]),
+                category=str(raw_item.get("category", "fact")),
+                source=str(raw_item.get("source", "user")),
+                created_at=str(raw_item.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+                id=str(raw_item["id"]),
             )
+        )
     return MemoryStore(items=items[-MEMORY_MAX_ITEMS:], summary=str(memory_state.get("summary", "")))
 
 

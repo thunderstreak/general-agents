@@ -195,9 +195,9 @@
    - [x] 增加会话上下文压缩：`/compact`、`/compact show`、`/compact clear`。
    - [x] 支持按消息数阈值自动压缩上下文，并将压缩摘要注入后续模型上下文。
    - [x] 被压缩移除的短期消息会追加到 `messages.archive.jsonl`。
-   - [ ] 增加记忆查看、删除和清空命令。
-   - [ ] 增加 `/memory list`、`/memory delete <id>`、`/memory clear` CLI 命令。
-   - [ ] 补充 Memory 管理命令对应 `unittest` 覆盖。
+   - [x] 增加记忆查看、删除和清空命令。
+   - [x] 增加 `/memory list`、`/memory delete <id>`、`/memory clear` CLI 命令。
+   - [x] 补充 Memory 管理命令对应 `unittest` 覆盖。
    - [ ] 增加语义检索和数据库存储。
 
 3. Orchestrator 编排层
