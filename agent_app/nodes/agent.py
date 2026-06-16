@@ -18,6 +18,7 @@ from agent_app.state import AgentState
 from agent_app.tools import tools, tools_by_name
 from agent_app.utils.messages import message_text
 from agent_app.utils.pseudo_tools import parse_pseudo_tool_calls as _parse_pseudo_tool_calls
+from agent_app.utils.pseudo_tools import sanitize_pseudo_tool_content
 
 
 _chat_llm = None
@@ -99,7 +100,7 @@ def ensure_visible_response(response, state: AgentState, action: str = "", is_to
     """确保非工具调用响应有可展示内容。"""
     if getattr(response, "tool_calls", None):
         return response
-    content = str(getattr(response, "content", "") or "").strip()
+    content = visible_response_text(getattr(response, "content", ""))
     if content:
         return response
 
@@ -107,11 +108,16 @@ def ensure_visible_response(response, state: AgentState, action: str = "", is_to
     retry_response = normalize_pseudo_tool_call_response(retry_response)
     if getattr(retry_response, "tool_calls", None):
         return retry_response
-    retry_content = str(getattr(retry_response, "content", "") or "").strip()
+    retry_content = visible_response_text(getattr(retry_response, "content", ""))
     if retry_content:
         return retry_response
 
     return AIMessage(content=empty_response_fallback_text(state, action, is_tool_summary))
+
+
+def visible_response_text(content: Any) -> str:
+    """提取最终可展示文本。"""
+    return sanitize_pseudo_tool_content(content).strip()
 
 
 def retry_empty_response(state: AgentState, action: str, is_tool_summary: bool):

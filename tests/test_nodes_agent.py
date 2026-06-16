@@ -126,6 +126,26 @@ class AgentNodeTest(unittest.TestCase):
         self.assertIn("我这次没有生成有效回答", result["messages"][0].content)
         self.assertIn("如何安装安全审计协议", result["messages"][0].content)
 
+    def test_agent_node_sanitized_empty_response_retries(self):
+        """模型输出清理后为空的伪工具内容时触发可见兜底。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="如何安装安全审计协议")]
+        state["plan"] = {
+            "intent": "chat",
+            "mode": "chat",
+            "plan_steps": [{"step_id": "step_1", "action": "chat", "tool_name": "", "args": {}, "reason": "planner 判为普通回答"}],
+            "current_step": 0,
+            "decision_reason": "planner 判为普通回答",
+            "status": "ready",
+        }
+
+        pseudo_response = AIMessage(content="<tool_call><function=unknown_tool></function></tool_call>")
+        with patch("agent_app.nodes.agent.invoke_with_fallback", side_effect=[pseudo_response, AIMessage(content="")]):
+            result = agent_node(state)
+
+        self.assertIn("我这次没有生成有效回答", result["messages"][0].content)
+        self.assertNotIn("tool_call", result["messages"][0].content)
+
     def test_agent_node_chat_plan_does_not_emit_thinking_progress(self):
         """普通 chat plan 不输出思考进度。"""
         state = base_state()
@@ -229,8 +249,8 @@ class AgentNodeTest(unittest.TestCase):
 
         self.assertEqual(result, messages)
 
-    def test_agent_node_tool_summary_streams_without_converting_pseudo_tool_call(self):
-        """工具结果总结可流式输出，但伪工具调用不应再次触发工具。"""
+    def test_agent_node_tool_summary_retries_sanitized_empty_pseudo_tool_call(self):
+        """工具结果总结输出伪工具调用时重试为可见回答。"""
         state = base_state()
         state["messages"] = [HumanMessage(content="长沙未来三天天气如何"), ToolMessage(content="天气结果", tool_call_id="tool_1")]
         pseudo_tool_call = AIMessage(
@@ -240,16 +260,17 @@ class AgentNodeTest(unittest.TestCase):
                 "</tool_call>"
             )
         )
+        summary = AIMessage(content="长沙未来三天天气结果如下：天气结果")
 
-        with patch("agent_app.nodes.agent.invoke_with_fallback", return_value=pseudo_tool_call) as invoke, patch(
+        with patch("agent_app.nodes.agent.invoke_with_fallback", side_effect=[pseudo_tool_call, summary]) as invoke, patch(
             "agent_app.nodes.agent.emit_progress"
         ) as emit_progress:
             result = agent_node(state)
 
         emit_progress.assert_called_once_with("正在整理工具结果...", event="summary_started", node="agent")
-        invoke.assert_called_once()
-        self.assertNotIn("tags", invoke.call_args.kwargs)
-        self.assertEqual(result["messages"][0].content, pseudo_tool_call.content)
+        self.assertEqual(invoke.call_count, 2)
+        self.assertNotIn("tags", invoke.call_args_list[0].kwargs)
+        self.assertEqual(result["messages"][0].content, summary.content)
         self.assertFalse(getattr(result["messages"][0], "tool_calls", []))
         self.assertNotIn("last_tool_request", result)
 
