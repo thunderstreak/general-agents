@@ -28,6 +28,7 @@ WORKER_POLL_INTERVAL_SECONDS = 0.03
 ESC_SEQUENCE_GRACE_SECONDS = 0.12
 ESC_SEQUENCE_DRAIN_SECONDS = 0.005
 ESC_SEQUENCE_MAX_DRAIN_CHARS = 64
+ESC_LISTENER_JOIN_TIMEOUT_SECONDS = 0.2
 
 
 class TaskCancelled(RuntimeError):
@@ -139,6 +140,7 @@ def esc_cancel_listener():
         yield
     finally:
         stop_event.set()
+        listener.join(ESC_LISTENER_JOIN_TIMEOUT_SECONDS)
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
@@ -170,8 +172,14 @@ def _listen_for_esc(stop_event: threading.Event) -> None:
         ready, _, _ = select.select([sys.stdin], [], [], 0.05)
         if not ready:
             continue
+        if stop_event.is_set():
+            return
         char = sys.stdin.read(1)
+        if stop_event.is_set():
+            return
         if should_cancel_from_chars(char, drain_remaining=_drain_pending_escape_sequence):
+            if stop_event.is_set():
+                return
             request_cancel()
             os.kill(os.getpid(), signal.SIGINT)
             return

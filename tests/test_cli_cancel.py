@@ -101,6 +101,29 @@ class CliCancelTest(unittest.TestCase):
 
         self.assertLess(time.perf_counter() - start_time, 0.2)
 
+    def test_listener_ignores_ready_input_after_stop(self):
+        """监听器停止后不再把就绪输入转换成取消。"""
+        stop_event = threading.Event()
+        select_calls = {"count": 0}
+        read_calls = {"count": 0}
+
+        def fake_select(*args):
+            select_calls["count"] += 1
+            if select_calls["count"] == 1:
+                stop_event.set()
+                return [object()], [], []
+            return [], [], []
+
+        with (
+            patch("agent_app.cli_cancel.select.select", side_effect=fake_select),
+            patch("agent_app.cli_cancel.sys.stdin.read", side_effect=lambda _: read_calls.__setitem__("count", read_calls["count"] + 1)),
+            patch("agent_app.cli_cancel.os.kill") as kill,
+        ):
+            cli_cancel._listen_for_esc(stop_event)
+
+        kill.assert_not_called()
+        self.assertEqual(read_calls["count"], 0)
+
     def test_listener_disabled_when_config_false(self):
         """配置关闭时不启用 Esc 监听。"""
         with patch("agent_app.cli_cancel.CLI_ESC_CANCEL", False):
