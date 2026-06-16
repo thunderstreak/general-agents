@@ -10,6 +10,7 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agent_app import cli, session_store
+from agent_app.context_compaction import ContextUsage
 from agent_app.state import create_initial_state, reset_turn_state
 
 
@@ -181,6 +182,14 @@ class CliSessionCommandTest(unittest.TestCase):
                 state = create_initial_state(messages=_turns(6))
                 buffer = io.StringIO()
                 with (
+                    patch(
+                        "agent_app.cli.estimate_context_usage",
+                        side_effect=[
+                            _token_usage(12, 23000, 2),
+                            _token_usage(12, 23000, 2),
+                            _token_usage(8, 15000, 2),
+                        ],
+                    ),
                     patch("agent_app.context_compaction.invoke_with_fallback", return_value=AIMessage(content="旧对话摘要")),
                     redirect_stdout(buffer),
                 ):
@@ -191,6 +200,9 @@ class CliSessionCommandTest(unittest.TestCase):
             self.assertEqual(session_id, metadata.session_id)
             self.assertEqual(pending_delete, "")
             self.assertIn("已压缩上下文", buffer.getvalue())
+            self.assertIn("当前上下文使用率：约 2%（23000/1000000 tokens", buffer.getvalue())
+            self.assertIn("消息数 12 -> 8", buffer.getvalue())
+            self.assertIn("token 使用率 2% -> 2%（23000 -> 15000 tokens）", buffer.getvalue())
             self.assertEqual(state["conversation_summary"], "旧对话摘要")
             self.assertEqual(len(state["messages"]), 8)
             self.assertIn("问题 1", archive_path.read_text(encoding="utf-8"))
@@ -199,7 +211,8 @@ class CliSessionCommandTest(unittest.TestCase):
         """`/compact` 取消后仍视为已处理。"""
         state = create_initial_state(messages=_turns(6))
 
-        with patch("agent_app.cli._run_cancellable", side_effect=cli.TaskCancelled("cancel")):
+        buffer = io.StringIO()
+        with patch("agent_app.cli._run_cancellable", side_effect=cli.TaskCancelled("cancel")), redirect_stdout(buffer):
             handled, result_state, session_id, pending_delete = cli._handle_cli_command("/compact", state, "session")
 
         self.assertTrue(handled)
@@ -212,11 +225,38 @@ class CliSessionCommandTest(unittest.TestCase):
         state = create_initial_state(conversation_summary="摘要内容")
 
         buffer = io.StringIO()
-        with redirect_stdout(buffer):
+        with patch("agent_app.cli.estimate_context_usage", return_value=_token_usage(0, 1200, 0)), redirect_stdout(buffer):
             handled, _, _, _ = cli._handle_cli_command("/compact show", state, "session")
 
         self.assertTrue(handled)
+        self.assertIn("当前上下文使用率：约 0%（1200/1000000 tokens", buffer.getvalue())
         self.assertIn("摘要内容", buffer.getvalue())
+
+    def test_compact_status_command_prints_usage(self):
+        """`/compact status` 只显示上下文使用率。"""
+        state = create_initial_state(messages=_turns(2))
+
+        buffer = io.StringIO()
+        with patch("agent_app.cli.estimate_context_usage", return_value=_token_usage(4, 23200, 2)), redirect_stdout(buffer):
+            handled, result_state, session_id, pending_delete = cli._handle_cli_command("/compact status", state, "session")
+
+        self.assertTrue(handled)
+        self.assertIs(result_state, state)
+        self.assertEqual(session_id, "session")
+        self.assertEqual(pending_delete, "")
+        self.assertIn("当前上下文使用率：约 2%（23200/1000000 tokens", buffer.getvalue())
+        self.assertNotIn("当前会话摘要", buffer.getvalue())
+
+    def test_compact_status_falls_back_to_message_usage(self):
+        """token 统计不可用时显示消息数兜底。"""
+        state = create_initial_state(messages=_turns(2))
+
+        buffer = io.StringIO()
+        with patch("agent_app.cli.estimate_context_usage", return_value=_message_usage(4, 10, 40)), redirect_stdout(buffer):
+            handled, _, _, _ = cli._handle_cli_command("/compact usage", state, "session")
+
+        self.assertTrue(handled)
+        self.assertIn("当前上下文使用率：约 40%（4/10 条消息，token 统计不可用）", buffer.getvalue())
 
     def test_auto_compact_if_needed_saves_archive(self):
         """自动压缩达到阈值的会话。"""
@@ -228,6 +268,13 @@ class CliSessionCommandTest(unittest.TestCase):
                 with (
                     patch("agent_app.cli.CONTEXT_COMPACT_ENABLED", True),
                     patch("agent_app.cli.CONTEXT_COMPACT_MESSAGE_THRESHOLD", 10),
+                    patch(
+                        "agent_app.cli.estimate_context_usage",
+                        side_effect=[
+                            _token_usage(12, 850000, 85),
+                            _token_usage(8, 250000, 25),
+                        ],
+                    ),
                     patch("agent_app.context_compaction.invoke_with_fallback", return_value=AIMessage(content="自动摘要")),
                     redirect_stdout(buffer),
                 ):
@@ -235,6 +282,7 @@ class CliSessionCommandTest(unittest.TestCase):
 
             self.assertEqual(result["conversation_summary"], "自动摘要")
             self.assertIn("已自动压缩上下文", buffer.getvalue())
+            self.assertIn("token 使用率 85% -> 25%（850000 -> 250000 tokens）", buffer.getvalue())
             archive_path = Path(tmp_dir) / metadata.session_id / "messages.archive.jsonl"
             self.assertIn("问题 1", archive_path.read_text(encoding="utf-8"))
 
@@ -273,6 +321,27 @@ def _turns(count: int):
         messages.append(HumanMessage(content=f"问题 {index}"))
         messages.append(AIMessage(content=f"回答 {index}"))
     return messages
+
+
+def _token_usage(message_count: int, used_tokens: int, percent: int) -> ContextUsage:
+    """构造 token 使用量。"""
+    return ContextUsage(
+        mode="token",
+        message_count=message_count,
+        threshold=40,
+        percent=percent,
+        token_available=True,
+        used_tokens=used_tokens,
+        context_window_tokens=1000000,
+        reserved_output_tokens=4096,
+        available_input_tokens=995904,
+        remaining_tokens=max(0, 995904 - used_tokens),
+    )
+
+
+def _message_usage(message_count: int, threshold: int, percent: int) -> ContextUsage:
+    """构造消息数使用量。"""
+    return ContextUsage(mode="message", message_count=message_count, threshold=threshold, percent=percent)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 """上下文压缩测试。"""
 
 import unittest
+from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agent_app.context_compaction import build_summary_context, compact_state, should_auto_compact
+from agent_app.context_compaction import build_summary_context, compact_state, estimate_context_usage, should_auto_compact
 from tests.helpers import base_state
 
 
@@ -49,6 +50,44 @@ class ContextCompactionTest(unittest.TestCase):
 
         self.assertTrue(should_auto_compact(state, 6))
         self.assertFalse(should_auto_compact(state, 7))
+
+    def test_estimate_context_usage_uses_default_token_window(self):
+        """token 估算默认使用 1M 上下文窗口。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="你好")]
+
+        usage = estimate_context_usage(state, threshold=40, tokenizer_model="gpt-4o")
+
+        self.assertTrue(usage.token_available)
+        self.assertEqual(usage.mode, "token")
+        self.assertEqual(usage.context_window_tokens, 1000000)
+        self.assertEqual(usage.reserved_output_tokens, 4096)
+        self.assertGreater(usage.used_tokens, 0)
+        self.assertGreater(usage.remaining_tokens, 0)
+
+    def test_estimate_context_usage_falls_back_to_messages(self):
+        """token 统计失败时回退消息数估算。"""
+        state = base_state()
+        state["messages"] = _turns(3)
+
+        with patch("agent_app.context_compaction._estimate_tokens", side_effect=RuntimeError("bad tokenizer")):
+            usage = estimate_context_usage(state, threshold=10)
+
+        self.assertFalse(usage.token_available)
+        self.assertEqual(usage.mode, "message")
+        self.assertEqual(usage.message_count, 6)
+        self.assertEqual(usage.percent, 60)
+
+    def test_should_auto_compact_uses_token_threshold(self):
+        """token 使用率达到阈值时自动压缩。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="短消息")]
+
+        with (
+            patch("agent_app.context_compaction.CONTEXT_COMPACT_TOKEN_THRESHOLD_PERCENT", 80),
+            patch("agent_app.context_compaction._estimate_tokens", return_value=850000),
+        ):
+            self.assertTrue(should_auto_compact(state, 40))
 
     def test_build_summary_context_wraps_summary(self):
         """会话摘要会转换为 SystemMessage。"""
