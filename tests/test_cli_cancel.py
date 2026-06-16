@@ -30,6 +30,22 @@ class CliCancelTest(unittest.TestCase):
                 with self.assertRaises(cli_cancel.TaskCancelled):
                     cli_cancel.run_with_esc_cancel(lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
 
+    def test_cancel_flag_raises_keyboard_interrupt(self):
+        """取消标记会在检查点抛出 KeyboardInterrupt。"""
+        cli_cancel.request_cancel()
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                cli_cancel.raise_if_cancelled()
+        finally:
+            cli_cancel.clear_cancel_requested()
+
+    def test_run_with_esc_cancel_clears_cancel_flag(self):
+        """任务包装器结束后会清理取消标记。"""
+        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+            self.assertEqual(cli_cancel.run_with_esc_cancel(lambda: "ok"), "ok")
+
+        self.assertFalse(cli_cancel.is_cancel_requested())
+
     def test_listener_disabled_when_config_false(self):
         """配置关闭时不启用 Esc 监听。"""
         with patch("agent_app.cli_cancel.CLI_ESC_CANCEL", False):

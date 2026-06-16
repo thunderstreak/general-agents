@@ -6,6 +6,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolCall, ToolMessage
 
+from agent_app.cli_cancel import raise_if_cancelled
 from agent_app.llm import get_chat_model, invoke_with_fallback
 from agent_app.memory import with_memory_context
 from agent_app.nodes.common import emit_progress, merge_attempted_tools, next_step_state, node_run
@@ -103,7 +104,10 @@ def invoke_tool_agent(model_messages: list, plan: dict, tags: list[str] | None =
         model = get_chat_llm().bind_tools(candidate_tools)
     if tags:
         model = _with_tags(model, tags)
-    return model.invoke(model_messages)
+    raise_if_cancelled()
+    response = model.invoke(model_messages)
+    raise_if_cancelled()
+    return response
 
 
 def fallback_tool_agent_response(response, state: AgentState):

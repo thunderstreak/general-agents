@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
+from agent_app.cli_cancel import raise_if_cancelled
 from agent_app.config import (
     BASE_URL,
     CHAT_MODEL_NAME,
@@ -58,18 +59,24 @@ def get_fallback_model() -> ChatOpenAI | None:
 
 def invoke_with_fallback(messages, tags: list[str] | None = None):
     """调用主聊天模型；失败时尝试 fallback 模型。"""
+    raise_if_cancelled()
     model = get_chat_model()
     if tags:
         model = model.with_config(tags=tags)
     try:
-        return model.invoke(messages)
+        response = model.invoke(messages)
+        raise_if_cancelled()
+        return response
     except Exception:
+        raise_if_cancelled()
         fallback_model = get_fallback_model()
         if fallback_model is None:
             raise
         if tags:
             fallback_model = fallback_model.with_config(tags=tags)
-        return fallback_model.invoke(messages)
+        response = fallback_model.invoke(messages)
+        raise_if_cancelled()
+        return response
 
 
 @lru_cache(maxsize=4)

@@ -23,6 +23,7 @@ else:
 T = TypeVar("T")
 ESC = "\x1b"
 ESC_SEQUENCE_PREFIXES = {"[", "O"}
+_CANCEL_EVENT = threading.Event()
 
 
 class TaskCancelled(RuntimeError):
@@ -31,12 +32,38 @@ class TaskCancelled(RuntimeError):
 
 def run_with_esc_cancel(fn: Callable[[], T], *, on_cancel_message: str = "已取消当前任务。") -> T:
     """执行任务，并允许运行中按 Esc 或 Ctrl+C 取消。"""
+    clear_cancel_requested()
     try:
         with esc_cancel_listener():
-            return fn()
+            result = fn()
+            raise_if_cancelled()
+            return result
     except KeyboardInterrupt as exc:
         print(f"\n{on_cancel_message}\n")
         raise TaskCancelled(on_cancel_message) from exc
+    finally:
+        clear_cancel_requested()
+
+
+def request_cancel() -> None:
+    """标记当前任务已请求取消。"""
+    _CANCEL_EVENT.set()
+
+
+def clear_cancel_requested() -> None:
+    """清除当前任务取消标记。"""
+    _CANCEL_EVENT.clear()
+
+
+def is_cancel_requested() -> bool:
+    """判断当前任务是否已请求取消。"""
+    return _CANCEL_EVENT.is_set()
+
+
+def raise_if_cancelled() -> None:
+    """如果当前任务已请求取消，则抛出 KeyboardInterrupt。"""
+    if is_cancel_requested():
+        raise KeyboardInterrupt()
 
 
 @contextmanager
@@ -52,6 +79,10 @@ def esc_cancel_listener():
         return
     old_settings = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin.fileno())
+    try:
+        signal.siginterrupt(signal.SIGINT, True)
+    except AttributeError:
+        pass
     listener = threading.Thread(target=_listen_for_esc, args=(stop_event,), daemon=True)
     listener.start()
     try:
@@ -86,6 +117,7 @@ def _listen_for_esc(stop_event: threading.Event) -> None:
             continue
         char = sys.stdin.read(1)
         if should_cancel_from_chars(char):
+            request_cancel()
             os.kill(os.getpid(), signal.SIGINT)
             return
 
