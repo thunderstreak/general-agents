@@ -1,17 +1,16 @@
 """CLI 流式输出渲染。"""
 
-import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk
 
 from agent_app.config import CLI_STREAM_PROGRESS, OUTPUT_DEBUG
 from agent_app.output import build_response, render_cli_response
-
-PSEUDO_TOOL_CALL_BLOCK_PATTERN = re.compile(r"<tool_call\b[^>]*>.*?</tool_call>", re.IGNORECASE | re.DOTALL)
-PSEUDO_TOOL_CALL_START_PATTERN = re.compile(r"<tool_call\b[^>]*>", re.IGNORECASE)
-PSEUDO_PARAMETER_PATTERN = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.IGNORECASE | re.DOTALL)
-PSEUDO_TOOL_MARKERS = ("<tool_call", "</tool_call", "<function=", "</function", "<parameter", "</parameter")
+from agent_app.utils.pseudo_tools import (
+    PSEUDO_TOOL_CALL_BLOCK_PATTERN,
+    PSEUDO_TOOL_CALL_START_PATTERN,
+    partial_tool_marker_index,
+)
 
 
 def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
@@ -209,7 +208,7 @@ class PseudoToolCallDisplayFilter:
             self._pending = self._pending[start_match.start() :]
             return "".join(visible_parts), "\n".join(preview_parts)
 
-        marker_index = _partial_tool_marker_index(self._pending) if keep_partial else -1
+        marker_index = partial_tool_marker_index(self._pending) if keep_partial else -1
         if marker_index == -1:
             visible_parts.append(self._pending)
             self._pending = ""
@@ -223,18 +222,6 @@ class PseudoToolCallDisplayFilter:
 def _pseudo_tool_call_preview(block: str) -> str:
     """提取伪工具调用中适合展示给用户的参数值。"""
     return ""
-
-
-def _partial_tool_marker_index(text: str) -> int:
-    """查找尾部可能组成伪工具调用标签的位置。"""
-    lower_text = text.lower()
-    for index in range(len(text) - 1, -1, -1):
-        if text[index] != "<":
-            continue
-        tail = lower_text[index:]
-        if tail and any(marker.startswith(tail) for marker in PSEUDO_TOOL_MARKERS):
-            return index
-    return -1
 
 
 def custom_progress_message(data) -> str:

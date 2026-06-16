@@ -16,13 +16,11 @@ from agent_app.orchestrator import error_state
 from agent_app.state import AgentState
 from agent_app.tools import tools, tools_by_name
 from agent_app.utils.messages import message_text
+from agent_app.utils.pseudo_tools import parse_pseudo_tool_calls as _parse_pseudo_tool_calls
 
 
 _chat_llm = None
 _llm_with_tools = None
-PSEUDO_TOOL_CALL_PATTERN = re.compile(r"<tool_call\b[^>]*>.*?</tool_call>", re.IGNORECASE | re.DOTALL)
-PSEUDO_FUNCTION_PATTERN = re.compile(r"<function=([^>\s]+)>(.*?)</function>", re.IGNORECASE | re.DOTALL)
-PSEUDO_PARAMETER_PATTERN = re.compile(r"<parameter=([^>\s]+)>(.*?)</parameter>", re.IGNORECASE | re.DOTALL)
 
 
 def agent_node(state: AgentState):
@@ -157,20 +155,7 @@ def normalize_pseudo_tool_call_response(response):
 
 def parse_pseudo_tool_calls(content: Any) -> list[ToolCall]:
     """从伪 XML 工具调用文本中解析 tool_calls。"""
-    text = _message_content_text(content)
-    if not text:
-        return []
-
-    calls = []
-    for block_match in PSEUDO_TOOL_CALL_PATTERN.finditer(text):
-        block = block_match.group(0)
-        for function_match in PSEUDO_FUNCTION_PATTERN.finditer(block):
-            tool_name = function_match.group(1).strip()
-            if tool_name not in tools_by_name:
-                continue
-            tool_args = _parse_pseudo_tool_args(tool_name, function_match.group(2))
-            calls.append(ToolCall(name=tool_name, args=tool_args, id=f"pseudo_{tool_name}_{len(calls) + 1}"))
-    return calls
+    return _parse_pseudo_tool_calls(content, tools_by_name)
 
 
 def _latest_user_text(state: AgentState) -> str:
@@ -188,25 +173,6 @@ def _first_url(text: str) -> str:
     """提取文本中的第一个 URL。"""
     match = re.search(r"https?://[^\s，。)）]+", text)
     return match.group(0) if match else ""
-
-
-def _parse_pseudo_tool_args(tool_name: str, body: str) -> dict[str, Any]:
-    """解析并按工具 schema 过滤参数。"""
-    allowed_args = set((getattr(tools_by_name[tool_name], "args", None) or {}).keys())
-    args: dict[str, Any] = {}
-    for match in PSEUDO_PARAMETER_PATTERN.finditer(body):
-        name = match.group(1).strip()
-        if allowed_args and name not in allowed_args:
-            continue
-        args[name] = match.group(2).strip()
-    return args
-
-
-def _message_content_text(content: Any) -> str:
-    """将消息 content 转成纯文本。"""
-    if isinstance(content, list):
-        return "".join(str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("type") == "text")
-    return str(content or "")
 
 
 def _with_tags(model, tags: list[str]):
