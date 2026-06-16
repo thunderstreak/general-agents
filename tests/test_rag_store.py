@@ -13,6 +13,10 @@ from agent_app.rag import store
 class RagStoreTest(unittest.TestCase):
     """RAG store 行为测试。"""
 
+    def setUp(self):
+        """清理 embedding 缓存，避免测试之间互相影响。"""
+        store._clear_embeddings_cache()
+
     def test_add_document_writes_metadata_and_vectors(self):
         """导入文档时写入 metadata 并调用 Chroma 写入向量。"""
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -112,10 +116,14 @@ class RagStoreTest(unittest.TestCase):
             },
         )
         vector_store = MagicMock()
-        vector_store.similarity_search_with_relevance_scores.return_value = [(document, 0.87654)]
+        vector_store.similarity_search_by_vector_with_relevance_scores.return_value = [(document, 0.87654)]
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with _patch_rag_dirs(tmp_dir), patch("agent_app.rag.store._vector_store", return_value=vector_store):
+            with (
+                _patch_rag_dirs(tmp_dir),
+                patch("agent_app.rag.store._vector_store", return_value=vector_store),
+                patch("agent_app.rag.store._embeddings", return_value=FakeEmbeddings()),
+            ):
                 store._save_documents({"doc1": {"document_id": "doc1", "active": True, "updated_at": 1}})
                 results = store.search_knowledge("LangGraph")
 
@@ -128,6 +136,24 @@ class RagStoreTest(unittest.TestCase):
         self.assertEqual(results[0]["sheet"], "Sheet1")
         self.assertIn("vector_score", results[0])
         self.assertIn("keyword_score", results[0])
+
+    def test_search_knowledge_emits_stage_progress(self):
+        """检索时输出 RAG 阶段进度。"""
+        document = Document(page_content="LangGraph 支持 StateGraph。", metadata={"source": "/tmp/demo.md"})
+        vector_store = MagicMock()
+        vector_store.similarity_search_by_vector_with_relevance_scores.return_value = [(document, 0.8)]
+        messages = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with (
+                _patch_rag_dirs(tmp_dir),
+                patch("agent_app.rag.store._vector_store", return_value=vector_store),
+                patch("agent_app.rag.store._embeddings", return_value=FakeEmbeddings()),
+            ):
+                store._save_documents({"doc1": {"document_id": "doc1", "active": True, "updated_at": 1}})
+                store.search_knowledge("LangGraph", progress=messages.append)
+
+        self.assertEqual(messages, ["生成查询向量...", "查询知识库...", "整理知识库结果..."])
 
     def test_normalize_query_removes_rag_prefix(self):
         """查询规范化会去掉 RAG 触发前缀。"""
@@ -226,6 +252,49 @@ class RagStoreTest(unittest.TestCase):
             result = store._embeddings()
 
         self.assertEqual(result.model, store.RAG_EMBEDDING_MODEL)
+
+    def test_embeddings_cache_reuses_huggingface_instance(self):
+        """同一配置下 HuggingFace embedding 只初始化一次。"""
+        embedding = object()
+
+        with (
+            patch("agent_app.rag.store.RAG_EMBEDDING_PROVIDER", "huggingface"),
+            patch("agent_app.rag.store.HuggingFaceEmbeddings", return_value=embedding) as embeddings_cls,
+        ):
+            first = store._embeddings()
+            second = store._embeddings()
+
+        self.assertIs(first, embedding)
+        self.assertIs(second, embedding)
+        embeddings_cls.assert_called_once_with(model_name=store.RAG_EMBEDDING_MODEL)
+
+    def test_embeddings_cache_key_changes_with_model(self):
+        """模型配置变化时不复用旧 embedding。"""
+        with (
+            patch("agent_app.rag.store.RAG_EMBEDDING_PROVIDER", "huggingface"),
+            patch("agent_app.rag.store.HuggingFaceEmbeddings", side_effect=["first", "second"]) as embeddings_cls,
+        ):
+            with patch("agent_app.rag.store.RAG_EMBEDDING_MODEL", "model-a"):
+                first = store._embeddings()
+            with patch("agent_app.rag.store.RAG_EMBEDDING_MODEL", "model-b"):
+                second = store._embeddings()
+
+        self.assertEqual(first, "first")
+        self.assertEqual(second, "second")
+        self.assertEqual(embeddings_cls.call_count, 2)
+
+    def test_huggingface_first_load_progress_only_once(self):
+        """首次加载提示只在同一进程第一次初始化时输出。"""
+        messages = []
+
+        with (
+            patch("agent_app.rag.store.RAG_EMBEDDING_PROVIDER", "huggingface"),
+            patch("agent_app.rag.store.HuggingFaceEmbeddings", return_value=object()),
+        ):
+            store._embeddings(progress=messages.append)
+            store._embeddings(progress=messages.append)
+
+        self.assertEqual(messages, ["首次加载本地 embedding 模型..."])
 
 
 def _patch_rag_dirs(tmp_dir: str):

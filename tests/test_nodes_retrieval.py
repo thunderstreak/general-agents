@@ -43,6 +43,24 @@ class RetrievalNodeTest(unittest.TestCase):
 
         emit_progress.assert_called_once_with("检索中...", node="retrieval")
 
+    def test_retrieval_passes_rag_progress_callback(self):
+        """retrieval 会把 RAG 内部阶段进度转成节点进度。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="根据知识库回答 LangGraph 是什么")]
+
+        def fake_search(_query, progress=None):
+            progress("生成查询向量...")
+            return []
+
+        with (
+            patch("agent_app.nodes.retrieval.emit_progress") as emit_progress,
+            patch("agent_app.nodes.retrieval.search_knowledge", side_effect=fake_search),
+        ):
+            retrieval_node(state)
+
+        emit_progress.assert_any_call("检索中...", node="retrieval")
+        emit_progress.assert_any_call("生成查询向量...", node="retrieval", event="rag_progress")
+
     def test_retrieval_node_prefers_input_context_text(self):
         """retrieval 优先使用 perception 生成的 normalized_text。"""
         state = base_state()

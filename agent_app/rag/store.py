@@ -8,7 +8,7 @@ import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import chromadb
 from langchain_chroma import Chroma
@@ -40,6 +40,8 @@ DOCUMENTS_FILE_NAME = "documents.json"
 CHUNKS_FILE_NAME = "chunks.jsonl"
 PDF_PAGE_PATTERN = re.compile(r"^## 第 (?P<page>\d+) 页$", re.MULTILINE)
 XLSX_SHEET_PATTERN = re.compile(r"^## 工作表：(?P<sheet>.+)$", re.MULTILINE)
+ProgressCallback = Callable[[str], None]
+_EMBEDDINGS_CACHE: dict[tuple[Any, ...], Any] = {}
 
 
 class KnowledgeBaseError(RuntimeError):
@@ -212,7 +214,7 @@ def rebuild_knowledge_base() -> dict[str, Any]:
     return summary
 
 
-def search_knowledge(query: str, top_k: int | None = None) -> list[dict[str, Any]]:
+def search_knowledge(query: str, top_k: int | None = None, progress: ProgressCallback | None = None) -> list[dict[str, Any]]:
     """从 Chroma 知识库检索相关片段。"""
     normalized_query = normalize_query(query)
     if not RAG_ENABLED or not normalized_query or not list_documents():
@@ -220,7 +222,16 @@ def search_knowledge(query: str, top_k: int | None = None) -> list[dict[str, Any
 
     limit = top_k or RAG_TOP_K
     candidate_k = max(RAG_CANDIDATE_K, limit)
-    results = _vector_store().similarity_search_with_relevance_scores(normalized_query, k=candidate_k)
+    vector_store = _vector_store(progress=progress)
+    embeddings = _embeddings(progress=progress)
+    _check_cancelled()
+    _emit_progress(progress, "生成查询向量...")
+    query_vector = embeddings.embed_query(normalized_query)
+    _check_cancelled()
+    _emit_progress(progress, "查询知识库...")
+    results = vector_store.similarity_search_by_vector_with_relevance_scores(query_vector, k=candidate_k)
+    _check_cancelled()
+    _emit_progress(progress, "整理知识库结果...")
     retrieval_results = []
     for document, score in results:
         metadata = dict(getattr(document, "metadata", {}) or {})
@@ -271,27 +282,64 @@ def _ensure_rag_enabled() -> None:
         raise KnowledgeBaseError("RAG 知识库未开启，请设置 RAG_ENABLED=true。")
 
 
-def _vector_store() -> Chroma:
+def _vector_store(progress: ProgressCallback | None = None) -> Chroma:
     """创建 Chroma vector store。"""
     return Chroma(
         collection_name=CHROMA_COLLECTION_NAME,
         persist_directory=CHROMA_PERSIST_DIR,
-        embedding_function=_embeddings(),
+        embedding_function=_embeddings(progress=progress),
     )
 
 
-def _embeddings():
+def _embeddings(progress: ProgressCallback | None = None):
     """创建 RAG embedding 模型。"""
+    cache_key = _embedding_cache_key()
+    if cache_key in _EMBEDDINGS_CACHE:
+        return _EMBEDDINGS_CACHE[cache_key]
+
     if RAG_EMBEDDING_PROVIDER == "openai":
-        return OpenAICompatibleEmbeddings(
+        embeddings = OpenAICompatibleEmbeddings(
             model=RAG_EMBEDDING_MODEL,
             base_url=RAG_EMBEDDING_BASE_URL,
             api_key=RAG_EMBEDDING_API_KEY,
             timeout=MODEL_TIMEOUT_SECONDS,
         )
+        _EMBEDDINGS_CACHE[cache_key] = embeddings
+        return embeddings
     if RAG_EMBEDDING_PROVIDER != "huggingface":
         raise KnowledgeBaseError(f"暂不支持的 RAG_EMBEDDING_PROVIDER：{RAG_EMBEDDING_PROVIDER}")
-    return HuggingFaceEmbeddings(model_name=RAG_EMBEDDING_MODEL)
+    _emit_progress(progress, "首次加载本地 embedding 模型...")
+    _check_cancelled()
+    embeddings = HuggingFaceEmbeddings(model_name=RAG_EMBEDDING_MODEL)
+    _EMBEDDINGS_CACHE[cache_key] = embeddings
+    return embeddings
+
+
+def _embedding_cache_key() -> tuple[Any, ...]:
+    """生成 embedding 缓存 key。"""
+    return (
+        RAG_EMBEDDING_PROVIDER,
+        RAG_EMBEDDING_MODEL,
+        RAG_EMBEDDING_BASE_URL,
+        RAG_EMBEDDING_API_KEY,
+        MODEL_TIMEOUT_SECONDS,
+    )
+
+
+def _clear_embeddings_cache() -> None:
+    """清空 embedding 缓存，供测试使用。"""
+    _EMBEDDINGS_CACHE.clear()
+
+
+def _emit_progress(progress: ProgressCallback | None, message: str) -> None:
+    """发送 RAG 内部阶段进度。"""
+    if progress is not None:
+        progress(message)
+
+
+def _check_cancelled() -> None:
+    """在 RAG 阶段边界响应取消。"""
+    return
 
 
 def _split_text(content: str) -> list[str]:

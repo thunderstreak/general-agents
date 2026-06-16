@@ -20,10 +20,15 @@ def retrieval_node(state: AgentState):
     retrieval_results = []
     if input_context.get("should_retrieve") or should_retrieve(user_text):
         emit_progress("检索中...", node="retrieval")
-        retrieval_results = search_knowledge(user_text)
+        retrieval_results = search_knowledge(user_text, progress=_emit_rag_progress)
 
     return {
         "trace_id": trace_id,
         "retrieval_results": retrieval_results,
         "node_runs": [node_run("retrieval", start_time)],
     }
+
+
+def _emit_rag_progress(message: str) -> None:
+    """发送 RAG 内部阶段进度。"""
+    emit_progress(message, node="retrieval", event="rag_progress")
