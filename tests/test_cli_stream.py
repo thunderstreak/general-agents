@@ -376,29 +376,22 @@ class CliStreamTest(unittest.TestCase):
         self.assertEqual(output.count("回答内容"), 1)
         self.assertIn("Debug:", output)
         self.assertIn("planning", output)
+        self.assertLess(output.rindex("回答内容"), output.index("Debug:"))
 
-    def test_debug_tail_and_fallback_response_do_not_duplicate_debug(self):
-        """同一 state 上 debug tail 和 fallback 输出不重复打印 Debug。"""
+    def test_debug_tail_waits_for_final_response(self):
+        """没有 final_response 时不提前打印 debug。"""
         state = {
             "messages": [],
-            "final_response": {
-                "content": "回答内容",
-                "retrieval_sources": [],
-                "tool_calls": [],
-                "tool_summary": [],
-                "errors": [],
-                "trace_id": "trace",
-                "node_runs": [{"node_name": "agent", "success": True, "duration_ms": 1.0, "error": ""}],
-            },
+            "trace_id": "trace",
+            "node_runs": [{"node_name": "agent", "success": True, "duration_ms": 1.0, "error": ""}],
         }
 
         with patch("agent_app.cli_stream.OUTPUT_DEBUG", True):
             buffer = io.StringIO()
             with redirect_stdout(buffer):
                 cli._print_debug_tail(state)
-                cli._print_response(state)
 
-        self.assertEqual(buffer.getvalue().count("Debug:"), 1)
+        self.assertNotIn("Debug:", buffer.getvalue())
 
 
 if __name__ == "__main__":

@@ -89,10 +89,7 @@ def stream_response(app, state: dict[str, Any]) -> dict[str, Any]:
 def print_response(state: dict[str, Any]) -> None:
     """打印统一响应。"""
     response = state.get("final_response") or build_response(state)
-    debug_enabled = OUTPUT_DEBUG and not state.get("_cli_debug_printed")
-    print(f"{render_cli_response(response, debug=debug_enabled)}\n")
-    if debug_enabled:
-        state["_cli_debug_printed"] = True
+    print(f"{render_cli_response(response, debug=OUTPUT_DEBUG)}\n")
 
 
 def print_initial_status() -> bool:
@@ -286,15 +283,13 @@ def print_progress(message: str, printed_agent_prefix: bool, printed_progress: s
 
 def print_debug_tail(state: dict[str, Any]) -> None:
     """流式结束后补充 debug 信息。"""
-    if not OUTPUT_DEBUG or state.get("_cli_debug_printed"):
+    if not OUTPUT_DEBUG or not state.get("final_response"):
         return
 
-    response = state.get("final_response") or build_response(state)
-    debug_text = render_cli_response(response, debug=True)
+    debug_text = render_cli_response(state["final_response"], debug=True)
     lines = debug_text.splitlines()
     try:
         debug_start = lines.index("Debug:")
     except ValueError:
         return
     print("\n" + "\n".join(lines[debug_start:]))
-    state["_cli_debug_printed"] = True
