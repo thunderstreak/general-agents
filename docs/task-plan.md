@@ -5,10 +5,10 @@
 | 模块 | 状态 | 优先级 | 当前实现 | 后续任务 |
 |---|---|---|---|---|
 | 配置管理 | 已完成 | P0 | `agent_app/config.py` 从 `.env` / 环境变量读取模型名、`base_url`、API key，并提供 `.env.example` | 后续可继续区分 dev/test/prod 配置 |
-| 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、graph、nodes、output、CLI stream、CLI session、session store、CLI input、state、message utils 等基础行为；节点测试已按领域拆分 | 增加模型 mock、工具 mock、工具选择样例自动化、端到端测试 |
+| 测试 | 已实现但不完整 | P0 | 已有 `unittest` 覆盖 memory、graph、nodes、output、CLI stream、CLI session、session store、CLI input、state、message utils 等基础行为；节点测试已按领域拆分 | 增加模型 mock、工具 mock、工具选择样例自动化、API 和端到端测试 |
 | 日志与可观测性 | 已实现但功能不全 | P0 | 编排层已记录 `trace_id`、节点运行耗时和成功/失败状态；CLI 流式输出可展示节点/工具/RAG 阶段进度；`OUTPUT_DEBUG=true` 时在最终响应后输出 debug 信息 | 增加 structured logging、token/cost 统计、工具输入输出持久化记录、loop/stop reason |
-| 安全与权限 | 已完成基础防护 | P0 | 敏感配置通过 `.env` 管理；工具运行时已有白名单检查；URL Fetch 禁止 localhost、内网 IP 和 metadata 地址；确认节点已预留并支持需要确认的工具 | 增加更细粒度权限策略、危险工具确认、API key 脱敏日志和输入过滤 |
-| 感知理解 | 已完成基础节点 | P1 | 已新增 `perception_node`，统一生成 `input_context`，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 触发信号和候选工具名；CLI 仍负责 `@文件路径` 解析 | 后续增加模型能力校验、输入事件结构、API 文件输入复用和更细多模态判断 |
+| 安全与权限 | 已完成基础防护 | P0 | 敏感配置通过 `.env` 管理；工具运行时已有白名单检查；URL Fetch 禁止 localhost、内网 IP 和 metadata 地址；确认节点已预留并支持需要确认的工具 | 增加更细粒度权限策略、危险工具确认、API key 脱敏日志、上传文件大小/类型限制、临时目录清理、路径隔离和输入过滤 |
+| 感知理解 | 已完成基础节点 | P1 | 已新增 `perception_node`，统一生成 `input_context`，记录原始文本、标准化文本、附件摘要、文件解析错误、图片需求、RAG 触发信号和候选工具名；CLI 仍负责 `@文件路径` 解析 | 后续增加模型能力校验、输入事件结构、API 文件上传复用和更细多模态判断 |
 | Prompt 管理 | 已完成 | P1 | 工具选择 prompt 已拆分到 `agent_app/prompts/`，并提供样例文件；历史 Intent Router prompt 已清理 | 后续可继续增加版本管理和环境区分 |
 | 规划决策 | 已完成基础结构 | P1 | 已新增 `planning_node`，使用本地工具意图 gate 生成 `chat/tool_agent` plan；工具模式会记录候选工具名，只把候选工具绑定给模型；当工具模式模型未产生真实 `tool_calls` 时，会对 `web_search`/`fetch_url` 生成确定性 fallback tool call；Tool Selector 降级为兼容路径 | 继续增强多步任务拆解、参数补全、低置信度追问和 plan 推进 |
 | Tool 工具调用 | 已完成 | P1 | 已有 `get_location`、`get_weather`、`get_weather_forecast`、`web_search`、`fetch_url`，并按领域拆分到 `agent_app/tools/`；`web_search` 已改为 Tavily Search API；工具 metadata 与工具模块就近声明，注册中心只汇总；工具运行时支持元数据、白名单、重试、统一错误格式、结构化 ToolRunRecord 和调用日志 | 后续可按工具复杂度继续增强人工确认和更细粒度权限 |
@@ -20,9 +20,9 @@
 | 循环迭代控制 | 已完成基础结构 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；reflection 可路由到 agent/tools/planning/response/error，并记录 retry/stop/loop reason 和 attempted tools | 增加更细的工具级 retry policy 和多步 plan 推进 |
 | Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes/` 按领域拆分节点实现；支持 perception/retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 多步 plan 推进和更细可观测性 |
 | 数据存储 | 已实现基础会话保存 | P2 | 已有 `.agent_memory.json` 长期记忆和 `.agent_sessions/` 文件夹式会话历史；每个会话保存 state、可读消息日志和压缩归档；RAG 文档/chunk metadata 与 Chroma 向量索引已本地持久化；工具运行记录和 trace 尚未独立持久化 | 补齐工具运行记录、节点 trace、用户配置和数据清理能力 |
-| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已拆分到 `agent_app/cli_stream.py`，debug 只在最终 `final_response` 后输出 | 后续增加 API/前端输出适配和更丰富的 Markdown 渲染 |
+| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已拆分到 `agent_app/cli_stream.py`，debug 只在最终 `final_response` 后输出 | 后续增加 API/前端输出适配，API 复用 `final_response` 并用 SSE event 承载流式 token/progress |
 | CLI 交互体验 | 已完成基础体验 | P3 | 使用 `prompt_toolkit` 改善中文输入、方向键和历史；任务运行通过 worker thread 执行，Esc/Ctrl+C 可让 CLI 立即停止等待并回到输入提示；普通输入阶段 Ctrl+C 不打印 traceback | 后续隔离后台 worker 输出，必要时升级为 worker process + IPC 输出队列 |
-| API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行；输出层已提供可复用的结构化 `final_response` | 增加 FastAPI HTTP API、内存 session store、会话创建/恢复、确认流程 API 化、健康检查和基础测试 |
+| API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行；输出层已提供可复用的结构化 `final_response` | 增加 FastAPI HTTP API、JSON chat、SSE 流式输出、multipart 文件上传、session/confirm/RAG/compact 管理、健康检查和基础测试 |
 
 ## Agent 工作流程链路现状
 
@@ -36,8 +36,8 @@
 
 | 阶段 | 当前实现 | 缺口 | 后续任务 |
 |---|---|---|---|
-| 用户输入 | CLI 支持 `prompt_toolkit` 输入、流式输出、文件引用和会话命令 | 尚无统一输入事件结构 | 将文本、文件、会话命令统一封装为输入事件 |
-| 感知理解 | 已有 `perception_node` 输出标准化 `input_context`；`file_inputs/parser.py` 可解析文本、JSON、CSV、PDF、DOCX、XLSX、图片；图片会标记 `requires_vision` | 第一阶段只做本地结构化理解，尚未校验当前模型是否真的支持视觉，也未统一 CLI/API 输入事件 | 增加模型能力校验、输入事件结构和 API 文件输入复用 |
+| 用户输入 | CLI 支持 `prompt_toolkit` 输入、流式输出、文件引用和会话命令 | 尚无统一输入事件结构；API 尚未支持 JSON/multipart 输入 | 将文本、文件、会话命令和 API 请求统一封装为输入事件 |
+| 感知理解 | 已有 `perception_node` 输出标准化 `input_context`；`file_inputs/parser.py` 可解析文本、JSON、CSV、PDF、DOCX、XLSX、图片；图片会标记 `requires_vision` | 第一阶段只做本地结构化理解，尚未校验当前模型是否真的支持视觉，也未统一 CLI/API 输入事件 | 增加模型能力校验、输入事件结构和 API 文件上传复用 |
 | 记忆检索 | `with_memory_context()` 注入长期记忆；`retrieval_node` 已接入 Chroma 文档 retriever；RAG 支持 sync/rebuild 和本地关键词 rerank | 长期记忆仍是直接注入，不做语义检索；RAG 暂未支持专业 reranker 和 LLM query rewrite | 下一阶段补长期记忆语义检索和更高级检索 |
 | 规划决策 | `planning_node` 优先读取 `input_context.normalized_text` 和 `candidate_tool_names`，使用本地工具意图 gate 生成 `chat/tool_agent` 结构化 plan | 当前仍是单步轻量 planning，不支持多步任务拆解、参数补全和计划推进 | 增强多步 planning，支持低置信度追问和 plan 状态推进 |
 | 工具调用 | `agent_node` 对 `tool_agent` plan 调用绑定工具模型，由模型原生 tool calling 生成 `tool_calls`；若模型未调用工具，会基于候选工具对 `web_search`/`fetch_url` 生成 fallback tool call；router 进入 tools | 当前只支持单轮工具调用和轻量工具模式判断 | 扩展为多工具/多意图计划，支持工具结果聚合 |
@@ -61,6 +61,8 @@
    - [x] 为 URL Fetch 工具补 mock 测试。
    - [x] 为 message utils 和 state 初始化补单元测试。
    - [x] 将 `test_orchestrator.py` 拆分为 graph 和 nodes 领域测试文件。
+   - [ ] 增加 API 测试：health、JSON chat、SSE stream、session、confirm、RAG、compact 和统一错误响应。
+   - [ ] 增加 API 文件上传测试：文本文件、PDF/DOCX/XLSX mock、图片输入、超限文件、解析失败和临时文件清理。
    - [ ] 为工具选择和端到端链路增加模型 mock 测试。
 
 3. [ ] 日志与可观测性
@@ -75,7 +77,7 @@
    - [x] 工具运行时支持工具白名单检查。
    - [x] URL Fetch 默认阻断 localhost、内网 IP 和 metadata 地址，降低 SSRF 风险。
    - [x] 为未来危险工具预留人工确认机制。
-   - [ ] 后续增加更细粒度权限策略和 API key 脱敏日志。
+   - [ ] 后续增加更细粒度权限策略、API key 脱敏日志、上传文件大小/类型限制、临时目录清理和路径隔离。
 
 ### P1：稳定核心 Agent 能力
 
@@ -249,21 +251,75 @@
    - [ ] 支持更丰富的 Markdown 渲染或前端/API 输出。
 
 2. API / 服务化
-   - [ ] 增加 FastAPI 服务入口，例如 `agent_app/api.py`。
-   - [ ] 新增 `fastapi`、`uvicorn` 依赖和启动说明。
-   - [ ] 定义 `ChatRequest`、`ChatResponse` 等请求/响应模型，复用输出层 `final_response`。
-   - [ ] 增加 `POST /chat`，支持 `message` 和可选 `session_id`，无 session 时自动创建。
-   - [ ] 增加内存 session store，按 `session_id` 保存独立 Agent state，避免多用户上下文串线。
-   - [ ] 增加会话恢复能力，有 `session_id` 时继续原会话。
-   - [ ] 增加确认流程接口，例如 `POST /sessions/{session_id}/confirm` 或在 chat 请求中传确认结果。
-   - [ ] 增加 `GET /health` 健康检查。
-   - [ ] 增加 `GET /sessions/{session_id}` 和 `DELETE /sessions/{session_id}`，便于调试和释放内存。
-   - [ ] 增加 HTTP 统一错误响应，不向客户端暴露 traceback。
-   - [ ] 增加 CORS 配置，为后续前端接入预留。
-   - [ ] 为内存 session store 增加最小锁保护，避免并发请求同时修改同一会话。
-   - [ ] 第一版暂不做文件上传，后续再支持 multipart 文件上传并复用文件解析模块。
-   - [ ] 增加 API 测试：health、chat、session 续聊、确认流程、错误响应。
-   - [ ] 后续增强：SQLite/Redis 会话持久化、用户鉴权、请求限流、SSE/WebSocket 流式输出、Docker 部署。
+   - [ ] 第一阶段：FastAPI 基础服务
+     - [ ] 新增 FastAPI 服务入口，例如 `agent_app/api.py`。
+     - [ ] 新增 `fastapi`、`uvicorn`、`python-multipart` 依赖和启动说明。
+     - [ ] 增加 `GET /health` 健康检查，返回服务状态、版本和基础配置状态。
+     - [ ] 增加 HTTP 统一错误响应，不向客户端暴露 traceback。
+     - [ ] 增加 CORS 配置，为后续前端接入预留。
+   - [ ] 第二阶段：非流式 JSON 对话
+     - [ ] 增加 `POST /chat`，支持 `application/json` 请求。
+     - [ ] 请求字段：`message`、可选 `session_id`、`stream=false`、可选 `metadata`。
+     - [ ] 响应 envelope：`run_id`、`session_id`、`status`、`response`、`error`、`trace_id`。
+     - [ ] `response` 复用现有 `final_response`，包含 `type/content/tool_summary/retrieval_sources/confirmation/metadata`。
+     - [ ] 无 `session_id` 时自动创建新会话；有 `session_id` 时加载并续写现有会话。
+   - [ ] 第三阶段：SSE 流式对话
+     - [ ] 增加 `POST /chat/stream`，响应 `text/event-stream`。
+     - [ ] 复用 LangGraph `stream_mode=["messages", "updates", "custom", "values"]`。
+     - [ ] SSE 事件：`progress`、`token`、`final`、`error`。
+     - [ ] `progress` 映射节点、工具、RAG 和 reflection 进度；`token` 使用 `delta` 字段输出模型回答增量。
+     - [ ] `final` 返回完整 envelope 和最终 `response`；`error` 返回统一错误结构。
+     - [ ] 继续过滤 `nostream` 内部模型内容、工具选择 JSON、伪工具调用片段和 debug 内容。
+   - [ ] 第四阶段：文件上传
+     - [ ] `POST /chat` 和 `POST /chat/stream` 同时支持 `multipart/form-data`。
+     - [ ] multipart 字段：`message`、可选 `session_id`、`files[]`、可选 `stream`、可选 `metadata`。
+     - [ ] 上传文件写入临时目录后复用 `agent_app/file_inputs/parser.py` 和 `build_human_message()`，解析完成后删除临时文件。
+     - [ ] 支持格式与 CLI 一致：txt、md、json、csv、pdf、docx、xlsx、png、jpg、jpeg、webp。
+     - [ ] 遵守现有 `MAX_FILE_SIZE_MB` 限制；图片继续作为多模态消息输入，要求 `VISION_MODEL_NAME` 对应模型支持视觉。
+     - [ ] 文件解析失败不直接让请求失败，按 CLI 文件输入语义写入 message context，让 Agent 可解释失败原因。
+   - [ ] 第五阶段：Session 与确认流程 API
+     - [ ] 复用 `.agent_sessions/` 文件夹式 session store，提供 `POST /sessions`、`GET /sessions`、`GET /sessions/{session_id}`、`DELETE /sessions/{session_id}`。
+     - [ ] 增加 session 级并发锁，避免同一会话被并发请求同时修改。
+     - [ ] 增加确认流程接口，例如 `POST /sessions/{session_id}/confirm`，支持 approve/reject pending tool call。
+     - [ ] 确认请求复用 `pending_confirmation`、`approved_tool_call_ids` 和现有 `resume_confirmed_tool()`。
+   - [ ] 第六阶段：RAG 与 Compact 管理 API
+     - [ ] 增加知识库接口：add/list/delete/clear/sync/rebuild，映射现有 `/rag` CLI 能力。
+     - [ ] RAG 文档导入支持上传文件和服务器本地路径两种模式，默认优先上传文件。
+     - [ ] 增加上下文压缩接口：compact/show/clear，映射现有 `/compact` CLI 能力。
+   - [ ] 第七阶段：生产化增强
+     - [ ] 增加用户鉴权、请求限流、API key 脱敏日志和审计日志。
+     - [ ] 增加 Docker/部署说明和环境变量文档。
+     - [ ] 后续评估 SQLite/Redis 会话持久化、PostgreSQL 生产库、SSE 断线恢复和 WebSocket 双向交互。
+   - [ ] 首版接口协议草案
+     - [ ] JSON 入参：
+       ```json
+       {
+         "message": "总结这段内容",
+         "session_id": "optional-session-id",
+         "stream": false,
+         "metadata": {}
+       }
+       ```
+     - [ ] multipart 入参：`message`、`session_id`、`stream`、`metadata`、`files[]`。
+     - [ ] 非流式响应：
+       ```json
+       {
+         "run_id": "run_xxx",
+         "session_id": "session_xxx",
+         "status": "completed",
+         "response": {
+           "type": "message",
+           "content": "最终回答",
+           "tool_summary": [],
+           "retrieval_sources": [],
+           "confirmation": null,
+           "metadata": {}
+         },
+         "error": null,
+         "trace_id": "trace_xxx"
+       }
+       ```
+     - [ ] SSE 事件格式：`event: progress` 表示阶段进度；`event: token` 携带 `{"delta": "..."}`；`event: final` 携带完整响应 envelope；`event: error` 携带统一错误结构。
 
 ## 当前结论
 
