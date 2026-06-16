@@ -3,6 +3,8 @@
 import unittest
 from contextlib import redirect_stdout
 import io
+import threading
+import time
 from unittest.mock import patch
 
 from agent_app import cli_cancel
@@ -45,6 +47,41 @@ class CliCancelTest(unittest.TestCase):
             self.assertEqual(cli_cancel.run_with_esc_cancel(lambda: "ok"), "ok")
 
         self.assertFalse(cli_cancel.is_cancel_requested())
+
+    def test_run_with_esc_cancel_worker_returns_result(self):
+        """worker 执行器正常返回结果。"""
+        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+            self.assertEqual(cli_cancel.run_with_esc_cancel_worker(lambda: "ok"), "ok")
+
+    def test_run_with_esc_cancel_worker_propagates_exception(self):
+        """worker 执行器透传任务异常。"""
+        with patch("agent_app.cli_cancel.esc_cancel_listener"):
+            with self.assertRaises(ValueError):
+                cli_cancel.run_with_esc_cancel_worker(lambda: (_ for _ in ()).throw(ValueError("bad")))
+
+    def test_wait_for_worker_cancels_without_waiting_for_blocked_worker(self):
+        """worker 阻塞时取消等待应立即返回。"""
+        started = threading.Event()
+        release = threading.Event()
+        worker = cli_cancel.WorkerResult()
+
+        def slow_task():
+            started.set()
+            release.wait(1)
+
+        thread = threading.Thread(target=cli_cancel._run_worker, args=(slow_task, worker), daemon=True)
+        thread.start()
+        started.wait(0.5)
+        start_time = time.perf_counter()
+        cli_cancel.request_cancel()
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                cli_cancel._wait_for_worker(thread, worker)
+        finally:
+            release.set()
+            cli_cancel.clear_cancel_requested()
+
+        self.assertLess(time.perf_counter() - start_time, 0.2)
 
     def test_listener_disabled_when_config_false(self):
         """配置关闭时不启用 Esc 监听。"""

@@ -3,7 +3,7 @@
 from agent_app.file_inputs import build_human_message, parse_user_input
 from agent_app.config import CLI_INPUT_HISTORY_FILE, CLI_STREAM, CLI_STREAM_PROGRESS, OUTPUT_DEBUG, SESSION_AUTO_SAVE
 from agent_app import cli_stream
-from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel
+from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel_worker
 from agent_app.graph import get_app, resume_confirmed_tool
 from agent_app.rag import (
     KnowledgeBaseError,
@@ -347,7 +347,7 @@ def _run_turn_cancellable(state: dict) -> dict:
 
 def _run_cancellable(fn):
     """执行可取消任务。"""
-    return run_with_esc_cancel(fn)
+    return run_with_esc_cancel_worker(fn)
 
 
 def _stream_response(state: dict) -> dict:

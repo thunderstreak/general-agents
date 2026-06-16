@@ -8,7 +8,7 @@ import signal
 import sys
 import threading
 from contextlib import contextmanager
-from typing import Callable, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from agent_app.config import CLI_ESC_CANCEL
 
@@ -24,6 +24,7 @@ T = TypeVar("T")
 ESC = "\x1b"
 ESC_SEQUENCE_PREFIXES = {"[", "O"}
 _CANCEL_EVENT = threading.Event()
+WORKER_POLL_INTERVAL_SECONDS = 0.03
 
 
 class TaskCancelled(RuntimeError):
@@ -45,6 +46,33 @@ def run_with_esc_cancel(fn: Callable[[], T], *, on_cancel_message: str = "已取
         clear_cancel_requested()
 
 
+def run_with_esc_cancel_worker(fn: Callable[[], T], *, on_cancel_message: str = "已取消当前任务。") -> T:
+    """在 worker 线程中执行任务，主线程监听取消并立即返回。"""
+    clear_cancel_requested()
+    worker = WorkerResult[T]()
+    thread = threading.Thread(target=_run_worker, args=(fn, worker), daemon=True)
+    thread.start()
+    try:
+        with esc_cancel_listener():
+            return _wait_for_worker(thread, worker)
+    except KeyboardInterrupt as exc:
+        request_cancel()
+        print(f"\n{on_cancel_message}\n")
+        raise TaskCancelled(on_cancel_message) from exc
+    finally:
+        if not thread.is_alive():
+            clear_cancel_requested()
+
+
+class WorkerResult(Generic[T]):
+    """保存 worker 执行结果。"""
+
+    def __init__(self) -> None:
+        """初始化结果容器。"""
+        self.value: T | None = None
+        self.exception: BaseException | None = None
+
+
 def request_cancel() -> None:
     """标记当前任务已请求取消。"""
     _CANCEL_EVENT.set()
@@ -64,6 +92,25 @@ def raise_if_cancelled() -> None:
     """如果当前任务已请求取消，则抛出 KeyboardInterrupt。"""
     if is_cancel_requested():
         raise KeyboardInterrupt()
+
+
+def _run_worker(fn: Callable[[], T], worker: WorkerResult[T]) -> None:
+    """执行 worker 任务并记录结果。"""
+    try:
+        worker.value = fn()
+    except BaseException as exc:
+        worker.exception = exc
+
+
+def _wait_for_worker(thread: threading.Thread, worker: WorkerResult[T]) -> T:
+    """等待 worker 完成，并在取消时立即中断等待。"""
+    while thread.is_alive():
+        raise_if_cancelled()
+        thread.join(WORKER_POLL_INTERVAL_SECONDS)
+    if worker.exception:
+        raise worker.exception
+    raise_if_cancelled()
+    return worker.value  # type: ignore[return-value]
 
 
 @contextmanager
