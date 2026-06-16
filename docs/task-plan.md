@@ -57,7 +57,7 @@
 2. [ ] 测试基础建设
    - [x] 增加 `unittest` 测试目录和基础测试。
    - [x] 为网页搜索工具补 mock 测试。
-   - [ ] 为天气工具、定位工具补 mock 测试。
+   - [x] 为天气工具、定位工具补 mock 测试。
    - [x] 为 URL Fetch 工具补 mock 测试。
    - [x] 为 message utils 和 state 初始化补单元测试。
    - [x] 将 `test_orchestrator.py` 拆分为 graph 和 nodes 领域测试文件。
@@ -71,6 +71,7 @@
    - [x] 编排层记录 `trace_id` 和节点运行耗时。
    - [x] CLI debug 信息只在最终 `final_response` 生成后输出，避免穿插在长回答中间。
    - [ ] 增加 structured logging、token/cost 统计和独立 trace 持久化。
+   - [ ] 设计轻量 `tool_runs`、`node_runs` 持久化结构，为 CLI debug 和后续 API 排障提供查询入口。
 
 4. [x] 安全与权限
    - [x] 避免敏感配置入库。
@@ -101,6 +102,7 @@
    - [x] 基于工具 metadata 先筛选候选工具，再绑定给 tool-agent 模型，降低工具增多后的上下文占用。
    - [x] 当 tool-agent 未产生真实工具调用时，针对 `web_search` 和 `fetch_url` 生成 fallback tool call，避免“提示调用工具但未调用”。
    - [ ] 支持多步任务拆解、参数补全和低置信度追问。
+   - [ ] 扩展 `plan_steps` 和 `current_step` 的推进逻辑。
 
 4. [x] Tool 工具调用
    - [x] 增加工具元数据和统一错误格式。
@@ -120,6 +122,8 @@
    - [x] 扩展 `AgentState`，保存 `conversation_summary`、`compact_count` 和 `last_compacted_at`。
    - [x] 将 `AgentState`、初始 state、单轮 reset 和旧会话默认值补齐集中到 `agent_app/state.py`。
    - [ ] 扩展 `AgentState`，保存 loop reason 和 stop reason。
+   - [ ] 抽象文本、文件、会话命令和 API 请求为统一 input event。
+   - [ ] 让 CLI `@文件路径` 和后续 API 文件上传复用同一套解析入口。
 
 6. [x] LLM 大模型
    - [x] 增加按用途配置多模型。
@@ -140,7 +144,7 @@
    - [x] 提取 `agent_app/context_compaction.py`，封装会话上下文压缩逻辑。
    - [x] 提取 `agent_app/cli/cancel.py`，封装 Esc/Ctrl+C 取消与 worker thread 执行器。
    - [x] 将 CLI RAG、compact 和 session 命令迁入 `agent_app/cli/` 子包。
-   - [ ] 后续清理根目录下 `agent_app/cli_*.py` 兼容入口。
+   - [x] 清理根目录下 `agent_app/cli_*.py` 兼容入口，只保留 `agent_app.cli` 包入口。
 
 8. [x] CLI 交互体验
    - [x] 使用 `prompt_toolkit` 替代原生 `input()`，改善 macOS 中文输入、删除和方向键体验。
@@ -192,6 +196,8 @@
    - [x] 支持按消息数阈值自动压缩上下文，并将压缩摘要注入后续模型上下文。
    - [x] 被压缩移除的短期消息会追加到 `messages.archive.jsonl`。
    - [ ] 增加记忆查看、删除和清空命令。
+   - [ ] 增加 `/memory list`、`/memory delete <id>`、`/memory clear` CLI 命令。
+   - [ ] 补充 Memory 管理命令对应 `unittest` 覆盖。
    - [ ] 增加语义检索和数据库存储。
 
 3. Orchestrator 编排层
@@ -211,6 +217,8 @@
    - [x] 增强基础换工具策略、loop reason 和 attempted tools。
    - [x] tool-agent 模式支持候选工具 fallback，避免模型未产出 tool call 时直接回答。
    - [ ] 增强更多工具 fallback、工具级 retry policy 和多步 plan 推进。
+   - [ ] 对缺少必要参数的工具调用先生成追问，而不是直接失败。
+   - [ ] 支持多工具/多意图任务的顺序执行和结果聚合。
    - [x] 增加文件夹式会话历史保存和手动恢复。
 
 4. 数据存储
@@ -225,6 +233,7 @@
    - [ ] 生产化阶段再增加 `document_chunks` 表，保存 chunk id、document id、内容、顺序、token 估算和 metadata。
    - [ ] RAG 向量索引使用 Chroma；SQLite 只保存文档和 chunk 业务元数据，以及 Chroma collection/chunk id 的映射关系。
    - [ ] 增加 `tool_runs` 表，保存工具名、参数、结果、成功/失败、耗时和错误信息。
+   - [ ] 保存工具参数摘要、结果状态、错误类型和关联 `trace_id`。
    - [ ] 增加 `node_runs` 表，保存 `trace_id`、节点名、耗时、成功/失败和错误信息。
    - [ ] 增加 `user_configs` 表，保存用户偏好、模型配置、输出配置和权限配置。
    - [ ] 增加数据隔离策略，确保不同用户、session、知识库之间不会串数据。
@@ -324,8 +333,8 @@
 
 ## 当前结论
 
-当前项目已经具备一个可用的 LangGraph Agent 原型：LLM、工具调用、短期记忆、长期记忆、文件夹式会话历史、上下文压缩、本地 RAG 知识库、流式 CLI、Esc 取消、基础 Perception、结构化 Planning 和 Reflection 闭环已经可用。
+当前项目已经具备一个可用的 LangGraph Agent 原型：LLM、工具调用、短期记忆、长期记忆、文件夹式会话历史、上下文压缩、本地 RAG 知识库、流式 CLI、Esc 取消、基础 Perception、结构化 Planning 和 Reflection 闭环已经可用；CLI 相关代码已收敛到 `agent_app/cli/` 包内，根目录旧兼容入口已清理。
 
 当前链路里的感知理解已从分散在 CLI、retrieval 和 planning 中的隐式判断，整理为 `perception -> retrieval -> planning -> agent` 的显式链路；工具调用和执行已经比较明确，规划决策已从直接 Tool Selector 升级为本地工具意图 gate + 结构化 plan + tool-agent 模式，并通过候选工具绑定和 fallback tool call 降低“提示调用工具但未调用”的概率；反思评估已从关键词规则升级为结构化工具结果驱动，并支持结果质检、追问、重试、换工具和多路由。
 
-RAG 已完成本地文件知识库 MVP、知识更新同步、embedding 缓存、基础来源 metadata、查询规范化和本地关键词 rerank；CLI 已支持 prompt_toolkit 输入、流式输出、worker thread 取消和最终 debug 输出。距离完整 agentic workflow 还需要补齐多步规划、长期记忆语义检索、更强 hybrid search、专业 reranker、LLM query rewrite、工具/trace 持久化、token/cost 统计和更强可观测性。
+RAG 已完成本地文件知识库 MVP、知识更新同步、embedding 缓存、基础来源 metadata、查询规范化和本地关键词 rerank；CLI 已支持 prompt_toolkit 输入、流式输出、worker thread 取消、最终 debug 输出和按职责拆分的子包结构。距离完整 agentic workflow 还需要补齐 API 服务化、多步规划、长期记忆语义检索、更强 hybrid search、专业 reranker、LLM query rewrite、工具/trace 持久化、token/cost 统计和更强可观测性。
