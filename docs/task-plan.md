@@ -20,7 +20,7 @@
 | 循环迭代控制 | 已完成基础结构 | P2 | 已有 `ORCHESTRATOR_MAX_STEPS` 防止无限循环；reflection 可路由到 agent/tools/planning/response/error，并记录 retry/stop/loop reason 和 attempted tools | 增加更细的工具级 retry policy 和多步 plan 推进 |
 | Orchestrator 编排层 | 已完成基础编排 | P2 | `agent_app/graph.py` 负责 LangGraph 图构建和路由，`agent_app/nodes/` 按领域拆分节点实现；支持 perception/retrieval/planning/agent/tool/confirmation/reflection/memory/error/response 编排、循环保护、失败分支、人工确认预留、统一输出和节点 trace | 多步 plan 推进和更细可观测性 |
 | 数据存储 | 已实现基础会话保存 | P2 | 已有 `.agent_memory.json` 长期记忆和 `.agent_sessions/` 文件夹式会话历史；每个会话保存 state、可读消息日志和压缩归档；RAG 文档/chunk metadata 与 Chroma 向量索引已本地持久化；工具运行记录和 trace 尚未独立持久化 | 补齐工具运行记录、节点 trace、用户配置和数据清理能力 |
-| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已拆分到 `agent_app/cli_stream.py`，debug 只在最终 `final_response` 后输出 | 后续增加 API/前端输出适配，API 复用 `final_response` 并用 SSE event 承载流式 token/progress |
+| 输出层 | 已完成 | P3 | 已新增统一输出层，支持结构化响应、CLI 渲染、错误/确认状态、工具摘要、RAG 来源和 debug 输出；CLI 流式渲染已迁入 `agent_app/cli/stream.py`，debug 只在最终 `final_response` 后输出 | 后续增加 API/前端输出适配，API 复用 `final_response` 并用 SSE event 承载流式 token/progress |
 | CLI 交互体验 | 已完成基础体验 | P3 | 使用 `prompt_toolkit` 改善中文输入、方向键和历史；任务运行通过 worker thread 执行，Esc/Ctrl+C 可让 CLI 立即停止等待并回到输入提示；普通输入阶段 Ctrl+C 不打印 traceback | 后续隔离后台 worker 输出，必要时升级为 worker process + IPC 输出队列 |
 | API / 服务化 | 未实现 | P3 | 目前通过 `index.py` 命令行运行；输出层已提供可复用的结构化 `final_response` | 增加 FastAPI HTTP API、JSON chat、SSE 流式输出、multipart 文件上传、session/confirm/RAG/compact 管理、健康检查和基础测试 |
 
@@ -132,14 +132,15 @@
 
 7. [ ] 代码结构优化
    - [x] 提取公共 `agent_app/utils/messages.py`，统一 LangChain message 文本提取。
-   - [x] 提取 `agent_app/cli_stream.py`，拆分 CLI 流式输出渲染。
+   - [x] 提取 `agent_app/cli/stream.py`，拆分 CLI 流式输出渲染。
    - [x] 拆分 `graph.py` 节点实现与图构建：`graph.py` 保留图入口和路由，`nodes/` 承载节点实现。
    - [x] 将 `nodes.py` 继续拆为 `nodes/` 包，按 retrieval、planning、agent、tools、reflection、memory、response 等领域组织。
    - [x] 拆分过大的 `test_orchestrator.py`，按 graph/nodes 领域组织测试。
    - [x] 清理历史 `agent_app/intent.py` 和样例检查脚本，避免维护两套意图路由。
    - [x] 提取 `agent_app/context_compaction.py`，封装会话上下文压缩逻辑。
-   - [x] 提取 `agent_app/cli_cancel.py`，封装 Esc/Ctrl+C 取消与 worker thread 执行器。
-   - [ ] 后续继续拆分 CLI 命令处理逻辑。
+   - [x] 提取 `agent_app/cli/cancel.py`，封装 Esc/Ctrl+C 取消与 worker thread 执行器。
+   - [x] 将 CLI RAG、compact 和 session 命令迁入 `agent_app/cli/` 子包。
+   - [ ] 后续清理根目录下 `agent_app/cli_*.py` 兼容入口。
 
 8. [x] CLI 交互体验
    - [x] 使用 `prompt_toolkit` 替代原生 `input()`，改善 macOS 中文输入、删除和方向键体验。

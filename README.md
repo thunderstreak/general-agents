@@ -190,8 +190,7 @@ langgraph/
 ├── requirements.txt                 # Python 依赖
 ├── .env.example                     # 环境变量示例
 ├── agent_app/
-│   ├── cli.py                       # 命令行交互循环
-│   ├── cli_stream.py                # CLI 流式输出渲染
+│   ├── cli/                         # CLI 交互、流式输出、取消、会话/RAG/compact 命令
 │   ├── config.py                    # 环境变量和运行配置
 │   ├── graph.py                     # LangGraph 图构建和路由
 │   ├── nodes/                       # LangGraph 节点实现，按领域拆分
@@ -466,7 +465,7 @@ python scripts/check_tool_selector_examples.py
 - `agent_app/rag/` 负责本地知识库导入、文档 metadata、文本切分、Chroma 写入和检索。
 - `agent_app/state.py` 统一维护 `AgentState`、初始 state、单轮 state reset 和旧会话默认值补齐。
 - `agent_app/utils/` 存放通用 helper；其中 `utils/messages.py` 提供 LangChain message 文本提取，避免各模块重复解析消息结构。
-- `agent_app/cli.py` 保留 CLI 主循环、输入读取和会话命令；`agent_app/cli_stream.py` 负责流式 chunk 解析、进度输出和 debug 尾部渲染。
+- `agent_app/cli/` 负责 CLI 主循环、输入读取、流式 chunk 解析、Esc 取消、会话命令、RAG 命令和上下文压缩命令；根目录下的 `agent_app/cli_*.py` 仅保留旧导入路径兼容。
 - 新增工具时，需要在 `agent_app/tools/` 下实现工具函数，并在同一模块声明 `TOOL_METADATA`；然后在 `agent_app/tools/__init__.py` 导入工具函数和 metadata 进行汇总注册。
 - 新增 prompt 时，放入 `agent_app/prompts/`，通过 `prompt_loader.load_prompt()` 读取。
 - 需要调整单轮最大编排次数时，修改 `.env` 中的 `ORCHESTRATOR_MAX_STEPS`。

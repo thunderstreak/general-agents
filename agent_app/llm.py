@@ -4,7 +4,7 @@ from functools import lru_cache
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from agent_app.cli_cancel import raise_if_cancelled
+from agent_app.cli.cancel import raise_if_cancelled
 from agent_app.config import (
     BASE_URL,
     CHAT_MODEL_NAME,

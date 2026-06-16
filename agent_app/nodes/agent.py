@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolCall, ToolMessage
 
-from agent_app.cli_cancel import raise_if_cancelled
+from agent_app.cli.cancel import raise_if_cancelled
 from agent_app.context_compaction import build_summary_context
 from agent_app.llm import get_chat_model, invoke_with_fallback
 from agent_app.memory import with_memory_context

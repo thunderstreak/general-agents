@@ -11,11 +11,11 @@ from agent_app.config import (
     OUTPUT_DEBUG,
     SESSION_AUTO_SAVE,
 )
-from agent_app import cli_stream
-from agent_app.cli_cancel import TaskCancelled, run_with_esc_cancel_worker
-from agent_app.cli_compact import CompactOperations, auto_compact_if_needed, format_context_usage, format_usage_delta, handle_compact_command
-from agent_app.cli_rag import RagOperations, handle_rag_command
-from agent_app.cli_sessions import (
+from agent_app.cli import stream as cli_stream
+from agent_app.cli.cancel import TaskCancelled, run_with_esc_cancel_worker
+from agent_app.cli.compact import CompactOperations, auto_compact_if_needed, format_context_usage, format_usage_delta, handle_compact_command
+from agent_app.cli.rag import RagOperations, handle_rag_command
+from agent_app.cli.sessions import (
     SessionOperations,
     handle_session_command,
     print_current_session,
