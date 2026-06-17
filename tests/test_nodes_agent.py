@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
 
-from agent_app.nodes.agent import agent_node, invoke_tool_agent, parse_pseudo_tool_calls, with_context
+from agent_app.nodes.agent import agent_node, invoke_tool_agent, parse_pseudo_tool_calls, retrieval_fallback_text, with_context
 from tests.helpers import base_state
 
 
@@ -84,6 +84,10 @@ class AgentNodeTest(unittest.TestCase):
 
         invoke.assert_called_once()
         self.assertEqual(result["messages"][0].content, "你好")
+        self.assertEqual(result["model_outputs"][0]["purpose"], "chat")
+        self.assertEqual(result["model_outputs"][0]["attempt"], 1)
+        self.assertEqual(result["model_outputs"][0]["raw_content"], "你好")
+        self.assertEqual(result["model_outputs"][0]["visible_content"], "你好")
 
     def test_agent_node_chat_plan_retries_empty_response(self):
         """chat plan 空回答时重试一次，避免最终输出空白。"""
@@ -106,6 +110,9 @@ class AgentNodeTest(unittest.TestCase):
 
         self.assertEqual(invoke.call_count, 2)
         self.assertIn("请先确认", result["messages"][0].content)
+        self.assertEqual([item["attempt"] for item in result["model_outputs"]], [1, 2])
+        self.assertEqual(result["model_outputs"][1]["retry_count"], 1)
+        self.assertIn("请先确认", result["model_outputs"][1]["visible_content"])
 
     def test_agent_node_empty_response_uses_generic_fallback(self):
         """模型连续空回答时输出通用兜底。"""
@@ -125,6 +132,8 @@ class AgentNodeTest(unittest.TestCase):
 
         self.assertIn("我这次没有生成有效回答", result["messages"][0].content)
         self.assertIn("如何安装安全审计协议", result["messages"][0].content)
+        self.assertEqual([item["attempt"] for item in result["model_outputs"]], [1, 2, 3])
+        self.assertIn("连续返回空", result["model_outputs"][2]["error"])
 
     def test_agent_node_sanitized_empty_response_retries(self):
         """模型输出清理后为空的伪工具内容时触发可见兜底。"""
@@ -145,6 +154,39 @@ class AgentNodeTest(unittest.TestCase):
 
         self.assertIn("我这次没有生成有效回答", result["messages"][0].content)
         self.assertNotIn("tool_call", result["messages"][0].content)
+        self.assertIn("<tool_call>", result["model_outputs"][0]["raw_content"])
+        self.assertEqual(result["model_outputs"][0]["visible_content"], "")
+
+    def test_agent_node_rag_pseudo_tool_falls_back_to_retrieval_snippets(self):
+        """RAG 已命中但模型连续输出伪知识库工具时展示检索片段。"""
+        state = base_state()
+        state["messages"] = [HumanMessage(content="知识库中如何安装安全审计协议")]
+        state["retrieval_results"] = [
+            {
+                "source": "OpenClaw极简安全实践指南1.pdf",
+                "title": "OpenClaw极简安全实践指南1.pdf",
+                "content": "安装安全审计协议需要先准备运行环境，然后启用审计配置。",
+            }
+        ]
+        state["plan"] = {
+            "intent": "chat",
+            "mode": "chat",
+            "plan_steps": [{"step_id": "step_1", "action": "chat", "tool_name": "", "args": {}, "reason": "使用知识库回答"}],
+            "current_step": 0,
+            "decision_reason": "使用知识库回答",
+            "status": "ready",
+        }
+        pseudo_response = AIMessage(
+            content="<tool_call><function=search_knowledge_base><parameter=query>安全审计协议 安装 配置</parameter></function></tool_call>"
+        )
+
+        with patch("agent_app.nodes.agent.invoke_with_fallback", side_effect=[pseudo_response, pseudo_response]):
+            result = agent_node(state)
+
+        self.assertIn("知识库检索已完成", result["messages"][0].content)
+        self.assertIn("安装安全审计协议", result["messages"][0].content)
+        self.assertIn("OpenClaw极简安全实践指南1.pdf", result["messages"][0].content)
+        self.assertEqual([item["attempt"] for item in result["model_outputs"]], [1, 2, 3])
 
     def test_agent_node_chat_plan_does_not_emit_thinking_progress(self):
         """普通 chat plan 不输出思考进度。"""
@@ -241,6 +283,27 @@ class AgentNodeTest(unittest.TestCase):
         self.assertIn("上下文压缩", result[0].content)
         self.assertEqual(result[-1].content, "继续")
 
+    def test_with_context_rag_system_prompt_forbids_pseudo_tool_calls(self):
+        """RAG 上下文提示明确禁止继续输出伪工具调用。"""
+        messages = [HumanMessage(content="知识库中如何安装安全审计协议")]
+
+        result = with_context(messages, {}, [{"source": "doc.md", "content": "安装步骤"}], "")
+
+        self.assertEqual(result[0].type, "system")
+        self.assertIn("知识库检索已经完成", result[0].content)
+        self.assertIn("禁止", result[0].content)
+        self.assertIn("search_knowledge_base", result[0].content)
+
+    def test_retrieval_fallback_text_uses_retrieval_results(self):
+        """RAG 兜底回答会展示检索片段。"""
+        text = retrieval_fallback_text(
+            [{"source": "doc.md", "title": "安全指南", "content": "安装安全审计协议需要启用审计配置。"}]
+        )
+
+        self.assertIn("知识库检索已完成", text)
+        self.assertIn("安全指南", text)
+        self.assertIn("启用审计配置", text)
+
     def test_with_context_omits_empty_conversation_summary(self):
         """没有会话摘要时不额外注入。"""
         messages = [HumanMessage(content="你好")]
@@ -273,6 +336,7 @@ class AgentNodeTest(unittest.TestCase):
         self.assertEqual(result["messages"][0].content, summary.content)
         self.assertFalse(getattr(result["messages"][0], "tool_calls", []))
         self.assertNotIn("last_tool_request", result)
+        self.assertEqual([item["purpose"] for item in result["model_outputs"]], ["tool_summary", "tool_summary_retry"])
 
     def test_agent_node_tool_agent_plan_invokes_llm_with_tools(self):
         """tool_agent plan 调用绑定工具模型。"""
@@ -345,6 +409,8 @@ class AgentNodeTest(unittest.TestCase):
         self.assertEqual(result["last_tool_request"]["tool_calls"][0]["name"], "web_search")
         self.assertEqual(result["attempted_tools"], ["web_search"])
         self.assertEqual(fake_model.tags, ["nostream"])
+        self.assertIn("<tool_call>", result["model_outputs"][0]["raw_content"])
+        self.assertEqual(result["model_outputs"][0]["purpose"], "tool_agent")
 
     def test_agent_node_tool_agent_falls_back_to_web_search_call(self):
         """工具模式下模型未调用工具时兜底生成搜索工具调用。"""

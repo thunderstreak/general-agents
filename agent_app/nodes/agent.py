@@ -67,6 +67,7 @@ def agent_node(state: AgentState):
             elif action == "tool_agent":
                 emit_progress("需要外部信息，准备调用工具...", node="agent")
                 response = invoke_tool_agent(model_messages, state.get("plan") or {}, tags=["nostream"])
+                raw_model_response = response
                 response = fallback_tool_agent_response(response, state)
             elif action == "clarification":
                 response = clarification_to_message(state.get("plan") or {})
@@ -77,10 +78,17 @@ def agent_node(state: AgentState):
             else:
                 response = get_llm_with_tools().invoke(model_messages)
 
+        model_outputs = []
+        if _is_model_response(action, is_tool_summary):
+            model_outputs.append(model_output_record("agent", _response_purpose(action, is_tool_summary), locals().get("raw_model_response", response), attempt=1))
+
         if not is_tool_summary:
             response = normalize_pseudo_tool_call_response(response)
-        response = ensure_visible_response(response, state, action, is_tool_summary)
+        response, ensure_outputs = ensure_visible_response(response, state, action, is_tool_summary)
+        model_outputs.extend(ensure_outputs)
         state_update = {**step_update, "messages": [response], "node_runs": [node_run("agent", start_time)]}
+        if model_outputs:
+            state_update["model_outputs"] = model_outputs
         if getattr(response, "tool_calls", None):
             state_update["last_tool_request"] = {"tool_calls": response.tool_calls}
             state_update["attempted_tools"] = merge_attempted_tools(state, [tool_call["name"] for tool_call in response.tool_calls])
@@ -98,21 +106,88 @@ def agent_node(state: AgentState):
 
 def ensure_visible_response(response, state: AgentState, action: str = "", is_tool_summary: bool = False):
     """确保非工具调用响应有可展示内容。"""
+    model_outputs = []
     if getattr(response, "tool_calls", None):
-        return response
+        return response, model_outputs
     content = visible_response_text(getattr(response, "content", ""))
     if content:
-        return response
+        return response, model_outputs
 
     retry_response = retry_empty_response(state, action, is_tool_summary)
+    model_outputs.append(model_output_record("agent", f"{_response_purpose(action, is_tool_summary)}_retry", retry_response, attempt=2, retry_count=1))
     retry_response = normalize_pseudo_tool_call_response(retry_response)
     if getattr(retry_response, "tool_calls", None):
-        return retry_response
+        return retry_response, model_outputs
     retry_content = visible_response_text(getattr(retry_response, "content", ""))
     if retry_content:
-        return retry_response
+        return retry_response, model_outputs
 
-    return AIMessage(content=empty_response_fallback_text(state, action, is_tool_summary))
+    fallback = AIMessage(content=empty_response_fallback_text(state, action, is_tool_summary))
+    model_outputs.append(
+        {
+            "node": "agent",
+            "purpose": f"{_response_purpose(action, is_tool_summary)}_fallback",
+            "attempt": 3,
+            "retry_count": 1,
+            "raw_content": "",
+            "visible_content": fallback.content,
+            "tool_calls": [],
+            "error": "模型连续返回空可见内容，使用本地兜底回答。",
+        }
+    )
+    return fallback, model_outputs
+
+
+def model_output_record(node: str, purpose: str, response, attempt: int, retry_count: int = 0) -> dict[str, Any]:
+    """构造模型输出调试记录。"""
+    raw_content = getattr(response, "content", "")
+    tool_calls = getattr(response, "tool_calls", []) or []
+    return {
+        "node": node,
+        "purpose": purpose,
+        "attempt": attempt,
+        "retry_count": retry_count,
+        "raw_content": stringify_model_content(raw_content),
+        "visible_content": visible_response_text(raw_content),
+        "tool_calls": _safe_tool_call_names(tool_calls),
+        "error": "",
+    }
+
+
+def stringify_model_content(content: Any) -> str:
+    """把模型 content 转成可记录文本。"""
+    if isinstance(content, str):
+        return content
+    return str(content or "")
+
+
+def _safe_tool_call_names(tool_calls: list) -> list[str]:
+    """提取 tool_call 名称用于日志。"""
+    names = []
+    for call in tool_calls:
+        if isinstance(call, dict):
+            name = call.get("name") or call.get("tool_name") or ""
+        else:
+            name = getattr(call, "name", "")
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _is_model_response(action: str, is_tool_summary: bool) -> bool:
+    """判断当前响应是否来自模型。"""
+    return is_tool_summary or action in {"chat", "tool_agent", "auto", ""}
+
+
+def _response_purpose(action: str, is_tool_summary: bool) -> str:
+    """生成模型输出用途标签。"""
+    if is_tool_summary:
+        return "tool_summary"
+    if action == "tool_agent":
+        return "tool_agent"
+    if action == "chat":
+        return "chat"
+    return action or "auto"
 
 
 def visible_response_text(content: Any) -> str:
@@ -122,9 +197,15 @@ def visible_response_text(content: Any) -> str:
 
 def retry_empty_response(state: AgentState, action: str, is_tool_summary: bool):
     """模型空回答时用明确指令重试一次。"""
-    user_text = _latest_user_text(state)
     if is_tool_summary:
         prompt = "上一次根据工具结果生成回答时返回了空内容。请用中文总结工具结果；若结果不足，请说明缺少什么。"
+    elif state.get("retrieval_results"):
+        prompt = (
+            "上一次回答为空，且知识库检索已经完成。"
+            "请只能基于[检索上下文]直接用中文回答用户问题；"
+            "禁止输出任何工具调用、XML、JSON、<tool_call> 或 <function=...> 片段。"
+            "如果检索内容不足，请先总结已检索到的相关信息，再说明缺少什么。"
+        )
     elif action == "tool_agent":
         prompt = "上一次工具模式没有生成工具调用，也没有生成可展示回答。请直接用中文回答，或说明需要补充哪些信息。"
     else:
@@ -146,11 +227,36 @@ def empty_response_fallback_text(state: AgentState, action: str, is_tool_summary
     user_text = _latest_user_text(state)
     if is_tool_summary:
         return "工具已经返回结果，但模型没有生成总结。请打开 debug 查看工具结果，或换个更具体的问题再试。"
+    if state.get("retrieval_results"):
+        return retrieval_fallback_text(state.get("retrieval_results", []))
     if action == "tool_agent":
         return "我没能生成有效的工具调用或回答。请补充更具体的目标、对象或上下文后再试。"
     if user_text:
         return f"我这次没有生成有效回答。请把“{user_text}”再具体一点，比如补充目标环境、版本或你希望我给出的步骤。"
     return "我这次没有生成有效回答。请换个更具体的说法再试。"
+
+
+def retrieval_fallback_text(retrieval_results: list) -> str:
+    """根据检索结果生成可见兜底回答。"""
+    snippets = []
+    for item in retrieval_results[:3]:
+        if not isinstance(item, dict):
+            continue
+        content = " ".join(str(item.get("content", "")).split())
+        if not content:
+            continue
+        source = item.get("title") or item.get("source") or "知识库"
+        snippets.append(f"- 来源：{source}\n  内容：{content[:500]}")
+
+    if not snippets:
+        return "知识库检索已完成，但没有可用于回答的文本片段。请检查导入文档是否包含相关内容。"
+
+    return (
+        "知识库检索已完成，但模型连续输出了无效工具调用。"
+        "我先把检索到的相关内容整理如下：\n"
+        + "\n".join(snippets)
+        + "\n\n请根据这些片段继续追问具体环境或版本，我可以再整理成安装步骤。"
+    )
 
 
 def tool_selection_to_message(tool_name: str, tool_args: dict):
@@ -310,15 +416,29 @@ def with_context(messages: list, memory_state: dict, retrieval_results: list, co
     if not retrieval_results:
         return model_messages
 
-    retrieval_text = "\n".join(
-        f"- 来源：{item.get('source', 'unknown')}；内容：{item.get('content', '')}"
-        for item in retrieval_results
-        if isinstance(item, dict)
-    )
+    retrieval_text = retrieval_context_text(retrieval_results)
     if not retrieval_text:
         return model_messages
 
     return [
-        SystemMessage(content=f"[检索上下文]\n{retrieval_text}\n回答时如使用这些内容，请说明来源。"),
+        SystemMessage(
+            content=(
+                "[检索上下文]\n"
+                f"{retrieval_text}\n"
+                "知识库检索已经完成，你现在必须基于这些片段直接回答用户。"
+                "禁止输出任何工具调用、XML、JSON、<tool_call> 或 <function=...> 片段。"
+                "系统不存在 search_knowledge_base 工具。"
+                "如使用这些内容，请说明来源；如果内容不足，请说明缺少的信息。"
+            )
+        ),
         *model_messages,
     ]
+
+
+def retrieval_context_text(retrieval_results: list) -> str:
+    """生成检索上下文文本。"""
+    return "\n".join(
+        f"- 来源：{item.get('source', 'unknown')}；内容：{item.get('content', '')}"
+        for item in retrieval_results
+        if isinstance(item, dict)
+    )

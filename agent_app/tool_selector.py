@@ -1,7 +1,7 @@
 """基于 LLM 结构化输出的规划选择器。"""
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -61,10 +61,17 @@ class ToolSelection:
     args: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.0
     reason: str = ""
+    model_output: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """转换为可写入 LangGraph state 的字典。"""
-        return asdict(self)
+        return {
+            "action": self.action,
+            "tool_name": self.tool_name,
+            "args": self.args,
+            "confidence": self.confidence,
+            "reason": self.reason,
+        }
 
 
 _selector_llm = None
@@ -123,11 +130,43 @@ def select_plan(user_text: str, input_context: dict | None = None) -> ToolSelect
                 HumanMessage(content=user_text),
             ]
         )
-        payload = json.loads(str(response.content or "").strip())
+        raw_content = str(response.content or "").strip()
+        payload = json.loads(raw_content)
     except Exception as exc:
-        return ToolSelection(action="auto", confidence=0.0, reason=f"规划失败：{exc}")
+        return ToolSelection(
+            action="auto",
+            confidence=0.0,
+            reason=f"规划失败：{exc}",
+            model_output={
+                "node": "planning",
+                "purpose": "structured_planner",
+                "attempt": 1,
+                "retry_count": 0,
+                "raw_content": locals().get("raw_content", ""),
+                "visible_content": locals().get("raw_content", ""),
+                "parsed": {},
+                "error": str(exc),
+            },
+        )
 
-    return parse_planner_payload(payload)
+    selection = parse_planner_payload(payload)
+    selection.model_output = {
+        "node": "planning",
+        "purpose": "structured_planner",
+        "attempt": 1,
+        "retry_count": 0,
+        "raw_content": raw_content,
+        "visible_content": raw_content,
+        "parsed": {
+            "action": selection.action,
+            "tool_name": selection.tool_name,
+            "confidence": selection.confidence,
+            "reason": selection.reason,
+            "candidate_tool_names": selection.args.get("_candidate_tool_names", []) if isinstance(selection.args, dict) else [],
+        },
+        "error": "",
+    }
+    return selection
 
 
 def parse_planner_payload(payload: dict[str, Any]) -> ToolSelection:

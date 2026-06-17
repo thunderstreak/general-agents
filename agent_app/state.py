@@ -42,6 +42,7 @@ class AgentState(TypedDict):
     final_response: dict
     trace_id: str
     node_runs: Annotated[list, operator.add]
+    model_outputs: Annotated[list, operator.add]
     memory_updated: bool
 
 
@@ -78,6 +79,7 @@ def create_initial_state(**overrides: Any) -> dict[str, Any]:
         "final_response": {},
         "trace_id": "",
         "node_runs": [],
+        "model_outputs": [],
         "memory_updated": False,
     }
     state.update(overrides)
@@ -106,6 +108,7 @@ def reset_turn_state(state: dict[str, Any]) -> dict[str, Any]:
     state["final_response"] = {}
     state["trace_id"] = new_trace_id()
     state["node_runs"] = []
+    state["model_outputs"] = []
     state["memory_updated"] = False
     state["approved_tool_call_ids"] = state.get("approved_tool_call_ids", [])
     return state

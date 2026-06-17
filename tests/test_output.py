@@ -19,6 +19,7 @@ def _state(content: str = "你好"):
         "memory_updated": False,
         "trace_id": "trace-1",
         "node_runs": [],
+        "model_outputs": [],
         "step_count": 1,
         "max_steps": 8,
         "clarification": {},
@@ -79,6 +80,27 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(response["metadata"]["clarification"]["missing_info"], "处理对象")
         self.assertIn("哪段内容", response["metadata"]["clarification"]["question"])
 
+    def test_build_response_includes_model_outputs_metadata(self):
+        """输出结构包含模型输出日志。"""
+        state = _state("回答内容")
+        state["model_outputs"] = [
+            {
+                "node": "planning",
+                "purpose": "structured_planner",
+                "attempt": 1,
+                "retry_count": 0,
+                "raw_content": '{"mode":"chat"}',
+                "visible_content": '{"mode":"chat"}',
+                "tool_calls": [],
+                "error": "",
+            }
+        ]
+
+        response = build_response(state)
+
+        self.assertEqual(response["model_outputs"][0]["node"], "planning")
+        self.assertEqual(response["metadata"]["model_outputs"][0]["purpose"], "structured_planner")
+
     def test_render_cli_response(self):
         """CLI 普通渲染。"""
         text = render_cli_response(build_response(_state("回答内容")))
@@ -129,6 +151,30 @@ class OutputTest(unittest.TestCase):
         self.assertIn("web_search", text)
         self.assertIn("result_status=ok", text)
         self.assertIn("agent", text)
+
+    def test_render_cli_debug_includes_model_outputs(self):
+        """CLI debug 渲染包含模型输出和重试次数。"""
+        state = _state("回答内容")
+        state["model_outputs"] = [
+            {
+                "node": "agent",
+                "purpose": "chat_retry",
+                "attempt": 2,
+                "retry_count": 1,
+                "raw_content": "<tool_call></tool_call>",
+                "visible_content": "",
+                "tool_calls": [],
+                "error": "",
+            }
+        ]
+
+        text = render_cli_response(build_response(state), debug=True)
+
+        self.assertIn("- model_outputs:", text)
+        self.assertIn("purpose=chat_retry", text)
+        self.assertIn("attempt=2", text)
+        self.assertIn("retry_count=1", text)
+        self.assertIn("raw=<tool_call></tool_call>", text)
 
     def test_render_cli_debug_includes_reflection(self):
         """CLI debug 渲染包含 reflection 摘要。"""

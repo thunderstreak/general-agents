@@ -35,5 +35,6 @@ def base_state() -> dict:
         "final_response": {},
         "trace_id": "test-trace",
         "node_runs": [],
+        "model_outputs": [],
         "memory_updated": False,
     }

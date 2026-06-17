@@ -38,11 +38,14 @@ def planning_node(state: AgentState):
 
     selection = planning_selection(user_text, bool(latest_message), input_context)
     plan = selection_to_plan(selection)
-    return {
+    result = {
         "tool_selection": selection.to_dict(),
         "plan": plan,
         "node_runs": [node_run("planning", start_time)],
     }
+    if selection.model_output:
+        result["model_outputs"] = [selection.model_output]
+    return result
 
 
 def planning_selection(user_text: str, has_user_message: bool, input_context: dict | None = None) -> ToolSelection:

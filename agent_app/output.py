@@ -34,11 +34,13 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
         "confirmation": pending_confirmation if status == "confirmation_required" else {},
         "trace_id": state.get("trace_id", ""),
         "node_runs": state.get("node_runs", []),
+        "model_outputs": state.get("model_outputs", []),
         "metadata": {
             "step_count": state.get("step_count", 0),
             "max_steps": state.get("max_steps", 0),
             "reflection": state.get("reflection", {}),
             "clarification": state.get("clarification", {}),
+            "model_outputs": state.get("model_outputs", []),
         },
     }
 
@@ -166,6 +168,26 @@ def _render_debug_lines(response: dict[str, Any]) -> list[str]:
                 f"error={node.get('error', '')}"
             )
 
+    model_outputs = response.get("model_outputs", [])
+    if model_outputs:
+        lines.append("- model_outputs:")
+        for output in model_outputs:
+            raw = _truncate_debug_text(output.get("raw_content", ""))
+            visible = _truncate_debug_text(output.get("visible_content", ""))
+            lines.append(
+                f"  - node={output.get('node', '')} "
+                f"purpose={output.get('purpose', '')} "
+                f"attempt={output.get('attempt', 0)} "
+                f"retry_count={output.get('retry_count', 0)} "
+                f"visible_chars={len(str(output.get('visible_content', '') or ''))} "
+                f"tool_calls={output.get('tool_calls', [])} "
+                f"error={output.get('error', '')}"
+            )
+            if raw:
+                lines.append(f"    raw={raw}")
+            if visible and visible != raw:
+                lines.append(f"    visible={visible}")
+
     reflection = (response.get("metadata") or {}).get("reflection") or {}
     if reflection:
         lines.append("- reflection:")
@@ -191,3 +213,11 @@ def _render_debug_lines(response: dict[str, Any]) -> list[str]:
             lines.append(f"  - {error.get('message') or error.get('error') or error}")
 
     return lines
+
+
+def _truncate_debug_text(value: Any, limit: int = 300) -> str:
+    """截断 debug 中的长文本。"""
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."

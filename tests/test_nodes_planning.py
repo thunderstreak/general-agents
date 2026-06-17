@@ -30,11 +30,24 @@ class PlanningNodeTest(unittest.TestCase):
         state = base_state()
         state["messages"] = [HumanMessage(content="讲个短笑话")]
 
-        with patch("agent_app.nodes.planning.select_plan", return_value=ToolSelection(action="chat", confidence=0.93, reason="planner 判断为普通聊天")):
+        selection = ToolSelection(action="chat", confidence=0.93, reason="planner 判断为普通聊天")
+        selection.model_output = {
+            "node": "planning",
+            "purpose": "structured_planner",
+            "attempt": 1,
+            "retry_count": 0,
+            "raw_content": '{"mode":"chat"}',
+            "visible_content": '{"mode":"chat"}',
+            "parsed": {"action": "chat"},
+            "error": "",
+        }
+        with patch("agent_app.nodes.planning.select_plan", return_value=selection):
             result = planning_node(state)
 
         self.assertEqual(result["plan"]["mode"], "chat")
         self.assertEqual(result["plan"]["plan_steps"][0]["action"], "chat")
+        self.assertEqual(result["model_outputs"][0]["purpose"], "structured_planner")
+        self.assertIn('"mode":"chat"', result["model_outputs"][0]["raw_content"])
 
     def test_planning_node_missing_operation_target_uses_clarification_plan(self):
         """planner 失败时，缺少处理对象的极短请求生成 fallback clarification plan。"""

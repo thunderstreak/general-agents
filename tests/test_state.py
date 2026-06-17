@@ -35,6 +35,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["compact_count"], 0)
         self.assertEqual(state["last_compacted_at"], "")
         self.assertIn("node_runs", state)
+        self.assertEqual(state["model_outputs"], [])
 
     def test_reset_turn_state_clears_turn_fields(self):
         """重置单轮字段但保留历史消息和长期记忆。"""
@@ -58,6 +59,7 @@ class AgentStateTest(unittest.TestCase):
             tool_calls=[{"tool_name": "get_weather"}],
             tool_errors=[{"error": "old"}],
             retrieval_results=[{"source": "old"}],
+            model_outputs=[{"node": "agent", "raw_content": "old"}],
             final_response={"content": "old"},
             approved_tool_call_ids=["tool_1"],
         )
@@ -84,6 +86,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(result["tool_calls"], [])
         self.assertEqual(result["tool_errors"], [])
         self.assertEqual(result["retrieval_results"], [])
+        self.assertEqual(result["model_outputs"], [])
         self.assertEqual(result["final_response"], {})
         self.assertTrue(result["trace_id"])
 
@@ -99,6 +102,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(state["subagent_results"], [])
         self.assertEqual(state["reflection"], {})
         self.assertIn("long_term_memory", state)
+        self.assertEqual(state["model_outputs"], [])
         self.assertEqual(state["conversation_summary"], "")
 
 
